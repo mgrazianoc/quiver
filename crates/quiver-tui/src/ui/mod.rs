@@ -7,7 +7,7 @@ pub mod tabs;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear};
 
-use crate::app::{App, LayoutPreset, Pane};
+use crate::app::{App, ConnectField, LayoutPreset, Pane};
 
 /// Top-level render function. Computes layout, renders panes, overlays.
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -68,6 +68,15 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         // Clear the area behind the palette
         frame.render_widget(Clear, palette_area);
         command_palette::render_palette(frame, app, palette_area);
+    }
+
+    // ── Connection dialog overlay ─────────────────────────────
+    if app.connect_dialog_open {
+        let dialog_width = 50u16.min(area.width.saturating_sub(4));
+        let dialog_height = 10u16.min(area.height.saturating_sub(4));
+        let dialog_area = centered_rect(dialog_width, dialog_height, area);
+        frame.render_widget(Clear, dialog_area);
+        render_connect_dialog(frame, app, dialog_area);
     }
 }
 
@@ -210,4 +219,64 @@ fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     Rect::new(x, y, width.min(area.width), height.min(area.height))
+}
+
+/// Render the connection dialog popup.
+fn render_connect_dialog(frame: &mut Frame, app: &App, area: Rect) {
+    use ratatui::widgets::Paragraph;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(app.theme.border_focused)
+        .title(" Connect to Flight SQL Server ")
+        .title_style(app.theme.border_focused.add_modifier(Modifier::BOLD))
+        .style(Style::default().bg(app.theme.bg));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.height < 4 || inner.width < 10 {
+        return;
+    }
+
+    let host_style = if app.connect_field == ConnectField::Host {
+        Style::default().fg(app.theme.accent)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let port_style = if app.connect_field == ConnectField::Port {
+        Style::default().fg(app.theme.accent)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(" Host: ", app.theme.result_header),
+            Span::styled(&app.connect_host, host_style),
+            if app.connect_field == ConnectField::Host {
+                Span::styled("_", Style::default().fg(app.theme.accent))
+            } else {
+                Span::raw("")
+            },
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(" Port: ", app.theme.result_header),
+            Span::styled(&app.connect_port, port_style),
+            if app.connect_field == ConnectField::Port {
+                Span::styled("_", Style::default().fg(app.theme.accent))
+            } else {
+                Span::raw("")
+            },
+        ]),
+        Line::from(""),
+        Line::styled(
+            " Enter to connect  |  Tab to switch  |  Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        ),
+    ];
+
+    let paragraph = Paragraph::new(lines).style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
+    frame.render_widget(paragraph, inner);
 }

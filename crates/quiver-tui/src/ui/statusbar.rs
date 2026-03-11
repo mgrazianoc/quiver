@@ -7,8 +7,13 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let fg = app.theme.status_bar_fg;
 
     // ── Left side: connection + schema + pane focus ────────────
-    let connection_dot = "●";
-    let connection_label = "No Connection";
+    let (connection_dot, dot_color, connection_label) = if app.query_running {
+        ("●", Color::Yellow, "Running...".to_string())
+    } else if let Some(ref profile) = app.connected_profile {
+        ("●", Color::Green, profile.name.clone())
+    } else {
+        ("●", Color::Rgb(100, 100, 100), "No Connection".to_string())
+    };
 
     let pane_label = app.focused_pane.label();
     let mode_label = app.key_mode.label();
@@ -16,7 +21,7 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let left = vec![
         Span::styled(
             format!(" {} ", connection_dot),
-            Style::default().fg(Color::Rgb(100, 100, 100)).bg(bg),
+            Style::default().fg(dot_color).bg(bg),
         ),
         Span::styled(
             format!("{} ", connection_label),

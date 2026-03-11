@@ -1,5 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use quiver_core::catalog::{FlatNode, TreeNode, TreeNodeKind};
+use quiver_core::bridge::{CoreHandle, CoreRequest, CoreResponse};
+use quiver_core::catalog::{FlatNode, TreeNode};
+use quiver_core::connection::ConnectionProfile;
 
 use crate::event::AppEvent;
 use crate::keybindings::KeyMode;
@@ -89,6 +91,14 @@ impl ContextMode {
             ContextMode::StreamMonitor => ContextMode::ServerInfo,
         }
     }
+}
+
+// ── Connection dialog field focus ─────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectField {
+    Host,
+    Port,
 }
 
 // ── Query tab ─────────────────────────────────────────────────
@@ -206,7 +216,7 @@ pub struct App {
     pub schema_selected: usize,
     pub schema_filter: String,
 
-    // Results (placeholder for RecordBatch integration)
+    // Results
     pub result_headers: Vec<String>,
     pub result_rows: Vec<Vec<String>>,
     pub result_selected_row: usize,
@@ -225,6 +235,20 @@ pub struct App {
 
     // Pane areas (updated each render for mouse hit-testing)
     pub pane_areas: std::collections::HashMap<Pane, ratatui::layout::Rect>,
+
+    // ── Async bridge ──────────────────────────────────────────
+    core: CoreHandle,
+
+    // ── Connection state ──────────────────────────────────────
+    pub connected_profile: Option<ConnectionProfile>,
+    pub server_info: Vec<(String, String)>,
+    pub query_running: bool,
+
+    // ── Connection dialog ─────────────────────────────────────
+    pub connect_dialog_open: bool,
+    pub connect_host: String,
+    pub connect_port: String,
+    pub connect_field: ConnectField,
 }
 
 impl App {
@@ -249,7 +273,7 @@ impl App {
             command_palette_selected: 0,
             commands: CommandEntry::default_commands(),
             context_mode: ContextMode::ServerInfo,
-            schema_tree: Self::placeholder_schema_tree(),
+            schema_tree: Vec::new(),
             schema_selected: 0,
             schema_filter: String::new(),
             result_headers: Vec::new(),
@@ -262,9 +286,16 @@ impl App {
             terminal_width: 0,
             terminal_height: 0,
             pane_areas: std::collections::HashMap::new(),
+            core: CoreHandle::spawn(),
+            connected_profile: None,
+            server_info: Vec::new(),
+            query_running: false,
+            connect_dialog_open: false,
+            connect_host: "localhost".into(),
+            connect_port: "8815".into(),
+            connect_field: ConnectField::Host,
         };
         app.create_tab();
-        app.load_placeholder_results();
         app
     }
 
@@ -315,7 +346,10 @@ impl App {
                 self.terminal_height = h;
                 false
             }
-            AppEvent::Tick => false,
+            AppEvent::Tick => {
+                self.poll_core();
+                false
+            }
         }
     }
 
@@ -336,8 +370,14 @@ impl App {
             return self.handle_palette_key(key);
         }
 
+        // ── Connection dialog (captures all input when open) ──
+        if self.connect_dialog_open {
+            return self.handle_connect_dialog_key(key);
+        }
+
         // ── Global keybindings (always active) ────────────────
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
 
         match key.code {
@@ -351,6 +391,51 @@ impl App {
             }
             KeyCode::Char('?') if !ctrl && self.focused_pane != Pane::Editor => {
                 self.help_open = !self.help_open;
+                return false;
+            }
+
+            // Execute query: F5 or Ctrl+Enter
+            KeyCode::F(5) => {
+                self.execute_current_query();
+                return false;
+            }
+            KeyCode::Enter if ctrl => {
+                self.execute_current_query();
+                return false;
+            }
+
+            // Cancel query: Ctrl+Shift+C
+            KeyCode::Char('c') if ctrl && shift => {
+                if self.query_running {
+                    self.core.send(CoreRequest::CancelQuery);
+                    self.notify("Cancelling query...".to_string());
+                }
+                return false;
+            }
+
+            // Connect dialog: Ctrl+O
+            KeyCode::Char('o') if ctrl => {
+                self.connect_dialog_open = true;
+                self.connect_field = ConnectField::Host;
+                return false;
+            }
+
+            // Disconnect: Ctrl+D
+            KeyCode::Char('d') if ctrl => {
+                if self.connected_profile.is_some() {
+                    self.core.send(CoreRequest::Disconnect);
+                } else {
+                    self.notify("Not connected".to_string());
+                }
+                return false;
+            }
+
+            // Refresh schema: Ctrl+R
+            KeyCode::Char('r') if ctrl => {
+                if self.connected_profile.is_some() {
+                    self.core.send(CoreRequest::RefreshSchema);
+                    self.notify("Refreshing schema...".to_string());
+                }
                 return false;
             }
 
@@ -465,6 +550,131 @@ impl App {
             Pane::SchemaBrowser => self.handle_schema_key(key),
             Pane::ContextPanel => {} // placeholder
         }
+    }
+
+    // ── Core bridge ───────────────────────────────────────────
+
+    fn poll_core(&mut self) {
+        while let Some(resp) = self.core.try_recv() {
+            match resp {
+                CoreResponse::Connected {
+                    profile,
+                    server_info,
+                } => {
+                    self.notify(format!("Connected to {}", profile.name));
+                    self.connected_profile = Some(profile);
+                    self.server_info = server_info;
+                    // Auto-refresh schema on connect
+                    self.core.send(CoreRequest::RefreshSchema);
+                }
+                CoreResponse::Disconnected => {
+                    self.notify("Disconnected".to_string());
+                    self.connected_profile = None;
+                    self.server_info.clear();
+                    self.schema_tree.clear();
+                    self.schema_selected = 0;
+                }
+                CoreResponse::QueryCompleted(result) => {
+                    self.query_running = false;
+                    self.tabs[self.active_tab].state = TabState::HasResults;
+
+                    // Convert RecordBatches to string rows for display
+                    self.result_headers = result
+                        .schema
+                        .fields()
+                        .iter()
+                        .map(|f| f.name().clone())
+                        .collect();
+
+                    self.result_rows = Vec::new();
+                    for batch in &result.batches {
+                        for row_idx in 0..batch.num_rows() {
+                            let row: Vec<String> = (0..batch.num_columns())
+                                .map(|col_idx| {
+                                    let col = batch.column(col_idx);
+                                    if col.is_null(row_idx) {
+                                        "NULL".to_string()
+                                    } else {
+                                        arrow::util::display::array_value_to_string(col, row_idx)
+                                            .unwrap_or_else(|_| "?".to_string())
+                                    }
+                                })
+                                .collect();
+                            self.result_rows.push(row);
+                        }
+                    }
+
+                    self.result_selected_row = 0;
+                    self.result_scroll_offset = 0;
+                    self.result_col_offset = 0;
+                    self.focused_pane = Pane::Results;
+                    self.notify(format!(
+                        "{} rows in {:.1}ms",
+                        result.total_rows,
+                        result.elapsed.as_secs_f64() * 1000.0
+                    ));
+                }
+                CoreResponse::SchemaLoaded(tree) => {
+                    self.schema_tree = tree;
+                    self.schema_selected = 0;
+                }
+                CoreResponse::Error { operation, message } => {
+                    self.query_running = false;
+                    if self.tabs.get(self.active_tab).is_some() {
+                        self.tabs[self.active_tab].state = TabState::Error;
+                    }
+                    self.notify(format!("{}: {}", operation, message));
+                }
+            }
+        }
+    }
+
+    fn execute_current_query(&mut self) {
+        if self.connected_profile.is_none() {
+            self.notify("Not connected — press Ctrl+O to connect".to_string());
+            return;
+        }
+        if self.query_running {
+            self.notify("Query already running — Ctrl+Shift+C to cancel".to_string());
+            return;
+        }
+
+        let sql: String = self.tabs[self.active_tab]
+            .content
+            .join("\n")
+            .trim()
+            .to_string();
+
+        if sql.is_empty() {
+            self.notify("Empty query".to_string());
+            return;
+        }
+
+        self.query_running = true;
+        self.tabs[self.active_tab].state = TabState::Running;
+        self.core.send(CoreRequest::ExecuteQuery(sql));
+    }
+
+    fn submit_connection(&mut self) {
+        let host = self.connect_host.trim().to_string();
+        let port: u16 = match self.connect_port.trim().parse() {
+            Ok(p) => p,
+            Err(_) => {
+                self.notify("Invalid port number".to_string());
+                return;
+            }
+        };
+
+        let profile = ConnectionProfile {
+            name: format!("{}:{}", host, port),
+            host,
+            port,
+            ..ConnectionProfile::default()
+        };
+
+        self.connect_dialog_open = false;
+        self.notify(format!("Connecting to {}...", profile.name));
+        self.core.send(CoreRequest::Connect(profile));
     }
 
     // ── Editor input ──────────────────────────────────────────
@@ -858,145 +1068,39 @@ impl App {
         }
     }
 
-    // ── Placeholder data ──────────────────────────────────────
+    // ── Connection dialog ─────────────────────────────────────
 
-    fn placeholder_schema_tree() -> Vec<TreeNode> {
-        vec![TreeNode {
-            label: "default".into(),
-            kind: TreeNodeKind::Catalog,
-            depth: 0,
-            expanded: true,
-            children: vec![TreeNode {
-                label: "public".into(),
-                kind: TreeNodeKind::Schema,
-                depth: 1,
-                expanded: true,
-                children: vec![
-                    TreeNode {
-                        label: "devices".into(),
-                        kind: TreeNodeKind::Table,
-                        depth: 2,
-                        expanded: false,
-                        children: vec![
-                            TreeNode {
-                                label: "id: Int64".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                            TreeNode {
-                                label: "name: Utf8".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                            TreeNode {
-                                label: "created_at: Timestamp[μs,UTC]".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                        ],
-                    },
-                    TreeNode {
-                        label: "metrics".into(),
-                        kind: TreeNodeKind::Table,
-                        depth: 2,
-                        expanded: false,
-                        children: vec![
-                            TreeNode {
-                                label: "ts: Timestamp[ns,UTC]".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                            TreeNode {
-                                label: "device_id: Int64".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                            TreeNode {
-                                label: "temperature: Float64".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                            TreeNode {
-                                label: "pressure: Float64".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                            TreeNode {
-                                label: "status: Utf8".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                        ],
-                    },
-                    TreeNode {
-                        label: "events_view".into(),
-                        kind: TreeNodeKind::View,
-                        depth: 2,
-                        expanded: false,
-                        children: vec![
-                            TreeNode {
-                                label: "event_id: Int64".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                            TreeNode {
-                                label: "event_type: Utf8".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                            TreeNode {
-                                label: "payload: Utf8".into(),
-                                kind: TreeNodeKind::Column,
-                                depth: 3,
-                                expanded: false,
-                                children: vec![],
-                            },
-                        ],
-                    },
-                ],
-            }],
-        }]
-    }
-
-    fn load_placeholder_results(&mut self) {
-        self.result_headers = vec![
-            "ts".into(),
-            "device_id".into(),
-            "temperature".into(),
-            "pressure".into(),
-            "status".into(),
-        ];
-        self.result_rows = (0..100)
-            .map(|i| {
-                vec![
-                    format!("2025-01-15T10:{:02}:00Z", i % 60),
-                    format!("{}", (i % 5) + 1),
-                    format!("{:.2}", 20.0 + (i as f64 * 0.3).sin() * 5.0),
-                    format!("{:.1}", 1013.0 + (i as f64 * 0.1).cos() * 2.0),
-                    if i % 7 == 0 { "WARN" } else { "OK" }.into(),
-                ]
-            })
-            .collect();
+    fn handle_connect_dialog_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.connect_dialog_open = false;
+            }
+            KeyCode::Enter => {
+                self.submit_connection();
+            }
+            KeyCode::Tab => {
+                self.connect_field = match self.connect_field {
+                    ConnectField::Host => ConnectField::Port,
+                    ConnectField::Port => ConnectField::Host,
+                };
+            }
+            KeyCode::Backspace => {
+                let field = match self.connect_field {
+                    ConnectField::Host => &mut self.connect_host,
+                    ConnectField::Port => &mut self.connect_port,
+                };
+                field.pop();
+            }
+            KeyCode::Char(c) => {
+                let field = match self.connect_field {
+                    ConnectField::Host => &mut self.connect_host,
+                    ConnectField::Port => &mut self.connect_port,
+                };
+                field.push(c);
+            }
+            _ => {}
+        }
+        false
     }
 }
 
@@ -1023,6 +1127,7 @@ pub enum CommandAction {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use quiver_core::catalog::TreeNodeKind;
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent {
@@ -1362,6 +1467,13 @@ mod tests {
     fn results_navigation_bounds() {
         let mut app = App::new();
         app.focused_pane = Pane::Results;
+
+        // Set up test data
+        app.result_headers = vec!["a".into(), "b".into()];
+        app.result_rows = (0..10)
+            .map(|i| vec![format!("{i}"), format!("{i}")])
+            .collect();
+
         assert_eq!(app.result_selected_row, 0);
 
         // Can't go above 0

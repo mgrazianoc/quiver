@@ -7,6 +7,7 @@
 //! - Schema introspection types (`TreeNode`, catalog RPCs)
 //! - Query execution types (`QueryResult`)
 
+pub mod bridge;
 pub mod catalog;
 pub mod client;
 pub mod config;

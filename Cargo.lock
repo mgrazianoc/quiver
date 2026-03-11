@@ -1352,6 +1352,7 @@ dependencies = [
  "serde",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "toml",
  "tonic",
  "uuid",
@@ -1362,12 +1363,14 @@ name = "quiver-tui"
 version = "0.2.0-dev"
 dependencies = [
  "anyhow",
+ "arrow",
  "crossterm",
  "dirs",
  "fuzzy-matcher",
  "quiver-core",
  "ratatui",
  "serde",
+ "tokio",
  "toml",
  "unicode-width 0.2.0",
 ]

@@ -17,6 +17,7 @@ arrow-flight = { version = "58", features = ["flight-sql"] }
 arrow-schema = "58"
 tonic = "0.14.5"
 tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = "0.7"
 futures = "0.3.32"
 
 [profile.release]

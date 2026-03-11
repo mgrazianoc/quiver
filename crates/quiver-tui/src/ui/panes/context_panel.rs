@@ -60,38 +60,47 @@ pub fn render_context_panel(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_server_info(frame: &mut Frame, app: &App, area: Rect) {
-    let lines = vec![
-        Line::from(vec![
-            Span::styled("Server: ", app.theme.result_header),
-            Span::styled("Not connected", Style::default().fg(Color::DarkGray)),
-        ]),
-        Line::from(""),
-        Line::from(vec![Span::styled(
-            "Connect to a Flight SQL server to ",
-            Style::default().fg(Color::DarkGray),
-        )]),
-        Line::from(vec![Span::styled(
-            "see server capabilities, SQL info,",
-            Style::default().fg(Color::DarkGray),
-        )]),
-        Line::from(vec![Span::styled(
-            "and supported features.",
-            Style::default().fg(Color::DarkGray),
-        )]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Supported RPCs: ", app.theme.info),
-            Span::styled("—", Style::default().fg(Color::DarkGray)),
-        ]),
-        Line::from(vec![
-            Span::styled("SQL Grammar:    ", app.theme.info),
-            Span::styled("—", Style::default().fg(Color::DarkGray)),
-        ]),
-        Line::from(vec![
-            Span::styled("Transactions:   ", app.theme.info),
-            Span::styled("—", Style::default().fg(Color::DarkGray)),
-        ]),
-    ];
+    let lines = if let Some(ref profile) = app.connected_profile {
+        let mut l = vec![
+            Line::from(vec![
+                Span::styled("Server: ", app.theme.result_header),
+                Span::styled(&profile.name, Style::default().fg(Color::Green)),
+            ]),
+            Line::from(vec![
+                Span::styled("  Endpoint: ", app.theme.info),
+                Span::styled(profile.endpoint_uri(), Style::default().fg(Color::DarkGray)),
+            ]),
+            Line::from(""),
+        ];
+
+        if app.server_info.is_empty() {
+            l.push(Line::styled(
+                "No additional server info available.",
+                Style::default().fg(Color::DarkGray),
+            ));
+        } else {
+            for (key, val) in &app.server_info {
+                l.push(Line::from(vec![
+                    Span::styled(format!("  {}: ", key), app.theme.info),
+                    Span::styled(val.as_str(), Style::default().fg(Color::DarkGray)),
+                ]));
+            }
+        }
+        l
+    } else {
+        vec![
+            Line::from(vec![
+                Span::styled("Server: ", app.theme.result_header),
+                Span::styled("Not connected", Style::default().fg(Color::DarkGray)),
+            ]),
+            Line::from(""),
+            Line::styled(
+                "Press Ctrl+O to connect to a",
+                Style::default().fg(Color::DarkGray),
+            ),
+            Line::styled("Flight SQL server.", Style::default().fg(Color::DarkGray)),
+        ]
+    };
 
     let widget = Paragraph::new(lines).style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
     frame.render_widget(widget, area);
@@ -123,27 +132,10 @@ fn render_connection_manager(frame: &mut Frame, app: &App, area: Rect) {
             app.theme.result_header,
         )]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("○ ", Style::default().fg(Color::DarkGray)),
-            Span::styled("local-dev", app.theme.tree_node),
-            Span::styled("  localhost:50051", Style::default().fg(Color::DarkGray)),
-        ]),
-        Line::from(vec![
-            Span::styled("○ ", Style::default().fg(Color::DarkGray)),
-            Span::styled("staging", app.theme.tree_node),
-            Span::styled(
-                "  staging.example.com:443",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("○ ", Style::default().fg(Color::DarkGray)),
-            Span::styled("production", Style::default().fg(Color::Rgb(200, 80, 80))),
-            Span::styled(
-                "  prod.example.com:443",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]),
+        Line::styled(
+            "No profiles configured.",
+            Style::default().fg(Color::DarkGray),
+        ),
         Line::from(""),
         Line::styled(
             "Add connections in ~/.config/quiver/connections.toml",

@@ -16,6 +16,7 @@ use arrow_flight::sql::{
 };
 use arrow_schema::SchemaRef;
 use futures::TryStreamExt;
+use tokio_util::sync::CancellationToken;
 use tonic::transport::Channel;
 
 use crate::connection::{AuthMethod, ConnectionProfile, ConnectionState};
@@ -108,6 +109,20 @@ impl FlightClient {
 
     /// Execute a SQL query and collect all result batches.
     pub async fn execute_query(&mut self, sql: &str) -> Result<QueryResult> {
+        self.execute_query_cancellable(sql, CancellationToken::new())
+            .await
+    }
+
+    /// Execute a SQL query with cancellation support.
+    ///
+    /// If `cancel` is triggered while streaming results, returns an
+    /// `Err` with a "query cancelled" message. Batches received before
+    /// cancellation are discarded.
+    pub async fn execute_query_cancellable(
+        &mut self,
+        sql: &str,
+        cancel: CancellationToken,
+    ) -> Result<QueryResult> {
         let start = Instant::now();
 
         let flight_info = self
@@ -125,23 +140,30 @@ impl FlightClient {
                 .as_ref()
                 .context("endpoint missing ticket")?;
 
-            let stream: FlightRecordBatchStream = self
+            let mut stream: FlightRecordBatchStream = self
                 .inner
                 .do_get(ticket.clone())
                 .await
                 .context("do_get failed")?;
 
-            let collected: Vec<RecordBatch> = stream
-                .try_collect()
-                .await
-                .context("failed to collect record batches")?;
-
-            if schema.is_none() {
-                if let Some(first) = collected.first() {
-                    schema = Some(first.schema());
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        anyhow::bail!("query cancelled");
+                    }
+                    batch = stream.try_next() => {
+                        match batch.context("failed to collect record batches")? {
+                            Some(batch) => {
+                                if schema.is_none() {
+                                    schema = Some(batch.schema());
+                                }
+                                batches.push(batch);
+                            }
+                            None => break,
+                        }
+                    }
                 }
             }
-            batches.extend(collected);
         }
 
         let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
@@ -1769,5 +1791,21 @@ mod tests {
         let inner = FlightSqlServiceClient::new(channel);
         let client = FlightClient::from_inner(inner, fix.profile());
         assert_eq!(client.state(), ConnectionState::Connected);
+    }
+
+    // ── Cancellation ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn cancel_query_returns_error() {
+        let fix = TestFixture::new(MockFlightSqlServer::new()).await;
+        let mut client = fix.client().await;
+
+        let cancel = CancellationToken::new();
+        cancel.cancel(); // cancel immediately
+
+        let result = client.execute_query_cancellable("SELECT 1", cancel).await;
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("cancelled"), "expected 'cancelled' in: {msg}");
     }
 }

@@ -15,11 +15,13 @@ quiver preserves Arrow's columnar typed semantics all the way
 to the rendering layer.
 
 **Current state:** v0.2-dev — the full UI shell is implemented
-(editor, result viewer, command palette, theming, mouse support).
+(editor, result viewer, command palette, theming, mouse support)
+and wired to a live Flight SQL backend via an async bridge.
 The project is a Cargo workspace with `quiver-core`
 (connection/data layer) and `quiver-tui` (terminal UI).
-The Flight SQL client wrapper covers the complete command surface;
-async bridge and TUI integration are next.
+You can connect to any Flight SQL server, execute queries,
+browse the catalog schema tree, and cancel running queries —
+all from the terminal.
 
 [flight-sql]: https://arrow.apache.org/docs/format/FlightSql.html
 
@@ -63,6 +65,11 @@ quiver -c 'SELECT 1' --conn dev # Non-interactive mode (future)
 | `Ctrl+L` | Cycle layout preset |
 | `Ctrl+K` | Cycle theme |
 | `Ctrl+J` | Cycle context panel mode |
+| `F5` / `Ctrl+Enter` | Execute query |
+| `Ctrl+Shift+C` | Cancel running query |
+| `Ctrl+O` | Open connection dialog |
+| `Ctrl+D` | Disconnect |
+| `Ctrl+R` | Refresh schema tree |
 
 ### Editor
 
@@ -129,7 +136,8 @@ crates/
 ├── quiver-core/                   # Library: connection management, config, data layer
 │   └── src/
 │       ├── lib.rs
-│       ├── catalog.rs             # TreeNode / FlatNode schema tree types
+│       ├── bridge.rs              # Async bridge (TUI ↔ tokio runtime)
+│       ├── catalog.rs             # TreeNode / FlatNode schema tree types + introspection
 │       ├── client.rs              # Flight SQL client wrapper (full command surface)
 │       ├── config.rs              # TOML configuration loading
 │       └── connection.rs          # Connection profiles, auth, and manager
@@ -155,8 +163,8 @@ crates/
 
 ## Roadmap
 
-- [ ] **v0.2** — Flight SQL connection (arrow-flight, tonic, tokio)
-- [ ] **v0.3** — Real RecordBatch rendering, catalog population from server
+- [x] **v0.2** — Flight SQL connection, async bridge, query execution, schema refresh
+- [ ] **v0.3** — RecordBatch-native rendering, streaming results, export (Parquet/CSV/IPC)
 - [ ] **v0.4** — Query execution, streaming results, export (Parquet/CSV/IPC)
 - [ ] **v0.5** — DataFusion local analytics engine
 - [ ] **v0.6** — Vim/Emacs keybinding modes, tree-sitter highlighting

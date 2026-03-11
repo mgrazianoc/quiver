@@ -15,6 +15,7 @@ arrow-flight = { workspace = true }
 arrow-schema = { workspace = true }
 tonic = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 futures = { workspace = true }
 base64 = "0.22"
 prost = "0.14"

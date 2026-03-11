@@ -27,6 +27,11 @@ pub fn help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(row("Ctrl+Q", "Quit"));
     lines.push(row("Ctrl+P", "Command palette"));
     lines.push(row("F1 / ?", "Toggle this help"));
+    lines.push(row("F5 / Ctrl+Enter", "Execute query"));
+    lines.push(row("Ctrl+Shift+C", "Cancel running query"));
+    lines.push(row("Ctrl+O", "Connect to server"));
+    lines.push(row("Ctrl+D", "Disconnect"));
+    lines.push(row("Ctrl+R", "Refresh schema"));
     lines.push(row("Ctrl+1/2/3/4", "Focus pane"));
     lines.push(row("Tab / Shift+Tab", "Cycle pane focus"));
     lines.push(row("Ctrl+Z", "Toggle zoom"));

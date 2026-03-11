@@ -16,6 +16,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Async bridge** — `CoreHandle` spawns a background tokio runtime
+  connected to the TUI event loop via mpsc channels; supports
+  Connect, Disconnect, ExecuteQuery, CancelQuery, and RefreshSchema
+  requests
+- **Live query execution** — press `F5` / `Ctrl+Enter` to run the
+  editor contents against the connected Flight SQL server; results
+  rendered as rows in the results pane
+- **Query cancellation** — `CancellationToken` integration via
+  `tokio::select!`; press `Ctrl+Shift+C` to cancel a running query
+- **Connection dialog** — `Ctrl+O` opens an inline connect popup
+  (host + port); `Ctrl+D` disconnects
+- **Schema refresh** — `Ctrl+R` fetches catalogs, schemas, tables,
+  and columns from the server and rebuilds the schema browser tree
+- **Schema introspection helpers** — `extract_tables()`,
+  `extract_columns()`, `build_schema_tree()` in `quiver-core::catalog`
+  with 6 unit tests
 - **Flight SQL client** — `FlightClient` wrapper around
   `FlightSqlServiceClient<Channel>` with profile-based connection,
   Basic/Bearer authentication, and methods covering the full Flight
@@ -30,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Catalog types** — `TreeNode`, `TreeNodeKind`, `FlatNode` moved to
   `quiver-core::catalog` for reuse by the data layer
 - **Help popup** — press `F1` or `?` for context-aware keybinding reference overlay
+
+### Removed
+
+- **Placeholder data** — removed `placeholder_schema_tree()`,
+  `load_placeholder_results()`, and hardcoded connection profiles;
+  all panes now start empty and populate from the live server
 
 ## [0.1.0] - 2026-03-11
 
