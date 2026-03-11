@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Flight SQL client** — `FlightClient` wrapper around
+  `FlightSqlServiceClient<Channel>` with profile-based connection,
+  Basic/Bearer authentication, and methods covering the full Flight
+  SQL surface: query execution, prepared statements, catalog
+  introspection (catalogs, schemas, tables, table types, SQL info,
+  primary keys, exported/imported keys, cross-reference, XDBC type
+  info), and transaction management; 33 integration tests against
+  an in-process mock server
 - **Connection profiles** — `ConnectionProfile` with host, port, TLS,
   and `AuthMethod` (None, Basic, Bearer Token); TOML persistence via
   `ConnectionManager` (`~/.config/quiver/connections.toml`)

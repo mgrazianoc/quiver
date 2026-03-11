@@ -3,10 +3,11 @@
 //!
 //! This crate houses:
 //! - `ConnectionProfile` and `ConnectionManager`
-//! - Flight SQL client wrapper (future: `arrow_flight::sql::FlightSqlServiceClient`)
-//! - Schema introspection types
-//! - Query execution types
+//! - `FlightClient` — async Flight SQL client wrapper
+//! - Schema introspection types (`TreeNode`, catalog RPCs)
+//! - Query execution types (`QueryResult`)
 
 pub mod catalog;
+pub mod client;
 pub mod config;
 pub mod connection;

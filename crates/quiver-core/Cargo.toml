@@ -10,3 +10,20 @@ serde = { workspace = true }
 toml = { workspace = true }
 dirs = { workspace = true }
 anyhow = { workspace = true }
+arrow = { workspace = true }
+arrow-flight = { workspace = true }
+arrow-schema = { workspace = true }
+tonic = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+base64 = "0.22"
+prost = "0.14"
+bytes = "1.11.1"
+
+[dev-dependencies]
+arrow-ipc = "58"
+once_cell = "1.21.3"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
+tokio-stream = "0.1.18"
+uuid = { version = "1.22.0", features = ["v4"] }
+bytes = "1.11.1"

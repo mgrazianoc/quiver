@@ -12,8 +12,13 @@ use serde::{Deserialize, Serialize};
 pub enum AuthMethod {
     #[default]
     None,
-    Basic { username: String, password: String },
-    BearerToken { token: String },
+    Basic {
+        username: String,
+        password: String,
+    },
+    BearerToken {
+        token: String,
+    },
 }
 
 // ── Connection Profile ────────────────────────────────────────
@@ -114,8 +119,7 @@ impl ConnectionManager {
 
     /// Persist profiles to disk.
     pub fn save(&self) -> anyhow::Result<()> {
-        let path = Self::file_path()
-            .ok_or_else(|| anyhow::anyhow!("No config directory"))?;
+        let path = Self::file_path().ok_or_else(|| anyhow::anyhow!("No config directory"))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -126,11 +130,7 @@ impl ConnectionManager {
 
     /// Add or update a profile (matched by name).
     pub fn upsert(&mut self, profile: ConnectionProfile) {
-        if let Some(existing) = self
-            .profiles
-            .iter_mut()
-            .find(|p| p.name == profile.name)
-        {
+        if let Some(existing) = self.profiles.iter_mut().find(|p| p.name == profile.name) {
             *existing = profile;
         } else {
             self.profiles.push(profile);

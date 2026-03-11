@@ -18,7 +18,8 @@ to the rendering layer.
 (editor, result viewer, command palette, theming, mouse support).
 The project is a Cargo workspace with `quiver-core`
 (connection/data layer) and `quiver-tui` (terminal UI).
-Flight SQL connectivity is the current milestone.
+The Flight SQL client wrapper covers the complete command surface;
+async bridge and TUI integration are next.
 
 [flight-sql]: https://arrow.apache.org/docs/format/FlightSql.html
 
@@ -129,6 +130,7 @@ crates/
 │   └── src/
 │       ├── lib.rs
 │       ├── catalog.rs             # TreeNode / FlatNode schema tree types
+│       ├── client.rs              # Flight SQL client wrapper (full command surface)
 │       ├── config.rs              # TOML configuration loading
 │       └── connection.rs          # Connection profiles, auth, and manager
 └── quiver-tui/                    # Binary: terminal UI
