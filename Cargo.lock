@@ -374,13 +374,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "quiver"
-version = "0.1.0"
+name = "quiver-core"
+version = "0.2.0-dev"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "quiver-tui"
+version = "0.2.0-dev"
 dependencies = [
  "anyhow",
  "crossterm",
  "dirs",
  "fuzzy-matcher",
+ "quiver-core",
  "ratatui",
  "serde",
  "toml",

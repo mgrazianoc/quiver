@@ -2,15 +2,25 @@
 
 **The definitive interactive client for Arrow Flight SQL servers.**
 
-![status](https://img.shields.io/badge/status-v0.1_MVP-blue)
+![status](https://img.shields.io/badge/status-v0.2--dev-blue)
 [![CI](https://github.com/mgrazianoc/quiver/actions/workflows/ci.yml/badge.svg)](https://github.com/mgrazianoc/quiver/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE-MIT)
 
 ## What is this?
 
-`quiver` is a terminal-based SQL client purpose-built for the [Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html) protocol. Unlike generic SQL tools that treat results as bags of strings, quiver is designed to preserve Arrow's columnar typed semantics all the way to the rendering layer.
+`quiver` is a terminal-based SQL client purpose-built for the
+[Arrow Flight SQL][flight-sql] protocol.
+Unlike generic SQL tools that treat results as bags of strings,
+quiver preserves Arrow's columnar typed semantics all the way
+to the rendering layer.
 
-**Current state:** v0.1 implements the full UI shell (Section 1 of the feature spec) — the workspace, editor, result viewer, command palette, theming, and mouse support. Flight SQL connectivity and the Arrow data layer are next.
+**Current state:** v0.2-dev — the full UI shell is implemented
+(editor, result viewer, command palette, theming, mouse support).
+The project is a Cargo workspace with `quiver-core`
+(connection/data layer) and `quiver-tui` (terminal UI).
+Flight SQL connectivity is the current milestone.
+
+[flight-sql]: https://arrow.apache.org/docs/format/FlightSql.html
 
 ## Building
 
@@ -19,10 +29,10 @@
 cargo build --release
 
 # Run
-cargo run --release
+cargo run --release -p quiver-tui
 
 # Or install
-cargo install --path .
+cargo install --path crates/quiver-tui
 ```
 
 ## Quick Start
@@ -41,6 +51,7 @@ quiver -c 'SELECT 1' --conn dev # Non-interactive mode (future)
 | --- | --- |
 | `Ctrl+Q` | Quit |
 | `Ctrl+P` | Command palette |
+| `F1` / `?` | Keybinding help popup |
 | `Ctrl+1/2/3/4` | Focus pane (Schema / Editor / Results / Context) |
 | `Ctrl+Z` | Toggle zoom on focused pane |
 | `Tab` / `Shift+Tab` | Cycle pane focus |
@@ -112,25 +123,31 @@ Requires:
 ## Project Structure
 
 ```text
-src/
-├── main.rs                 # Entry point, terminal setup, event loop
-├── app.rs                  # Application state, event dispatch, data
-├── event.rs                # Crossterm event reader
-├── config/mod.rs           # TOML configuration loading
-├── core/mod.rs             # Future: Flight SQL client, Arrow data layer
-├── keybindings/mod.rs      # Key mode detection and mapping
-├── theme/mod.rs            # Theme definitions (7 built-in)
-└── ui/
-    ├── mod.rs              # Layout computation, render dispatch
-    ├── tabs.rs             # Tab bar rendering
-    ├── statusbar.rs        # Status bar rendering
-    ├── command_palette.rs  # Fuzzy-searchable command overlay
-    └── panes/
-        ├── mod.rs
-        ├── editor.rs       # SQL editor with syntax highlighting
-        ├── results.rs      # Tabular result viewer
-        ├── schema_browser.rs  # Catalog tree browser
-        └── context_panel.rs   # Switchable info panels
+Cargo.toml                         # Workspace root
+crates/
+├── quiver-core/                   # Library: connection management, config, data layer
+│   └── src/
+│       ├── lib.rs
+│       ├── config.rs              # TOML configuration loading
+│       └── connection.rs          # Connection profiles and state
+└── quiver-tui/                    # Binary: terminal UI
+    └── src/
+        ├── main.rs                # Entry point, terminal setup, event loop
+        ├── app.rs                 # Application state, event dispatch
+        ├── event.rs               # Crossterm event reader
+        ├── keybindings/mod.rs     # Key mode detection and mapping
+        ├── theme/mod.rs           # Theme definitions (7 built-in)
+        └── ui/
+            ├── mod.rs             # Layout computation, render dispatch
+            ├── tabs.rs            # Tab bar rendering
+            ├── statusbar.rs       # Status bar rendering
+            ├── command_palette.rs # Fuzzy-searchable command overlay
+            ├── help.rs            # Context-aware keybinding help popup
+            └── panes/
+                ├── editor.rs      # SQL editor with syntax highlighting
+                ├── results.rs     # Tabular result viewer
+                ├── schema_browser.rs  # Catalog tree browser
+                └── context_panel.rs   # Switchable info panels
 ```
 
 ## Roadmap

@@ -22,9 +22,9 @@ cargo run
 
    ```bash
    cargo fmt --all -- --check
-   cargo clippy --all-targets --all-features
-   cargo check --all-features
-   cargo test --all-features
+   cargo clippy --workspace --all-targets --all-features
+   cargo check --workspace --all-features
+   cargo test --workspace --all-features
    ```
 
 5. Commit with clear, descriptive messages (see below)
@@ -52,14 +52,20 @@ ci: add clippy lint step
 
 ## Architecture Overview
 
-The codebase follows a layered structure:
+The project is a Cargo workspace with two crates:
+
+### `crates/quiver-core/` (library)
+
+- **`config.rs`** — TOML configuration loading and persistence
+- **`connection.rs`** — Connection profiles and state management
+- Future: Flight SQL client, Arrow data layer
+
+### `crates/quiver-tui/` (binary)
 
 - **`app.rs`** — Application state and event dispatch (the "model")
 - **`event.rs`** — Terminal event reader
-- **`ui/`** — All rendering logic (the "view") — panes, tabs, statusbar, command palette
-- **`core/`** — Flight SQL client and Arrow data layer (future)
-- **`config/`** — Configuration loading
-- **`theme/`** — Theme definitions
+- **`ui/`** — All rendering logic (the "view") — panes, tabs, statusbar, command palette, help overlay
+- **`theme/`** — Theme definitions (7 built-in)
 - **`keybindings/`** — Key mode detection and mapping
 
 Rendering is stateless: `ui::render()` reads from `App` and draws. State changes happen in `App::handle_event()`.

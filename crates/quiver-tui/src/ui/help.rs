@@ -12,10 +12,7 @@ pub fn help_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     let heading = |title: &str| -> Line<'static> {
-        Line::from(Span::styled(
-            format!("── {} ──", title),
-            bold.fg(accent),
-        ))
+        Line::from(Span::styled(format!("── {} ──", title), bold.fg(accent)))
     };
 
     let row = |key: &str, desc: &str| -> Line<'static> {
@@ -90,11 +87,7 @@ pub fn render_help(frame: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(app.theme.palette_border)
         .title(" Keybindings (press Esc or ? to close) ")
-        .title_style(
-            app.theme
-                .palette_border
-                .add_modifier(Modifier::BOLD),
-        )
+        .title_style(app.theme.palette_border.add_modifier(Modifier::BOLD))
         .style(Style::default().bg(app.theme.palette_bg));
 
     let inner = block.inner(area);

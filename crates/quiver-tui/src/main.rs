@@ -11,8 +11,6 @@ use crossterm::{
 use ratatui::prelude::*;
 
 mod app;
-mod config;
-mod core;
 mod event;
 mod keybindings;
 mod theme;

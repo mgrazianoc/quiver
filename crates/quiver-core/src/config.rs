@@ -1,16 +1,13 @@
+//! Application configuration, loadable from TOML.
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::keybindings::KeyMode;
-use crate::theme::ThemeKind;
-
-/// Top-level configuration, loadable from TOML.
+/// Top-level configuration, loadable from `~/.config/quiver/config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    pub key_mode: KeyMode,
-    pub theme: ThemeKind,
     pub editor: EditorConfig,
     pub results: ResultsConfig,
     pub memory_budget_mb: usize,
@@ -38,8 +35,6 @@ pub struct ResultsConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            key_mode: KeyMode::Normal,
-            theme: ThemeKind::TokyoNight,
             editor: EditorConfig::default(),
             results: ResultsConfig::default(),
             memory_budget_mb: 2048,
@@ -71,12 +66,12 @@ impl Default for ResultsConfig {
 }
 
 impl Config {
-    /// Standard config directory: ~/.config/quiver/
+    /// Standard config directory: `~/.config/quiver/`
     pub fn config_dir() -> Option<PathBuf> {
         dirs::config_dir().map(|d| d.join("quiver"))
     }
 
-    /// Attempt to load config from ~/.config/quiver/config.toml.
+    /// Attempt to load config from `~/.config/quiver/config.toml`.
     /// Falls back to defaults if file doesn't exist or is malformed.
     pub fn load() -> Self {
         let path = match Self::config_dir() {
@@ -91,7 +86,6 @@ impl Config {
     }
 
     /// Save current config to disk.
-    #[allow(dead_code)]
     pub fn save(&self) -> anyhow::Result<()> {
         let dir = Self::config_dir().ok_or_else(|| anyhow::anyhow!("No config directory"))?;
         std::fs::create_dir_all(&dir)?;
