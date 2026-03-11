@@ -1,0 +1,25 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-03-11
+
+### Added
+
+- **Multi-pane workspace** — four-quadrant layout (Schema Browser, Editor, Results, Context Panel) with resizable splits
+- **Query editor** — multi-buffer SQL editor with basic syntax highlighting and tab system
+- **Results viewer** — tabular result display with mock data and keyboard navigation
+- **Schema browser** — catalog/schema/table/column tree with expand/collapse
+- **Context panel** — switchable modes (Server Info, Query History, Connection Manager)
+- **Command palette** — fuzzy-searchable command overlay via `Ctrl+P`
+- **Tab system** — multiple query sessions with tab bar, `Ctrl+T`/`Ctrl+W` tab management
+- **7 built-in themes** — Tokyo Night, Catppuccin Mocha, Gruvbox, Nord, Dracula, Solarized Dark, Rosé Pine (cycle with `Ctrl+K`)
+- **3 layout presets** — Default, Wide Editor, Results Focus (cycle with `Ctrl+L`)
+- **Mouse support** — click to focus panes, scroll in any pane
+- **Pane zoom** — `Ctrl+Z` to maximize/restore any pane
+- **Status bar** — connection status, schema context, editor mode, row count
