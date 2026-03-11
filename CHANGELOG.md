@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Connection profiles** — `ConnectionProfile` with host, port, TLS,
+  and `AuthMethod` (None, Basic, Bearer Token); TOML persistence via
+  `ConnectionManager` (`~/.config/quiver/connections.toml`)
+- **Catalog types** — `TreeNode`, `TreeNodeKind`, `FlatNode` moved to
+  `quiver-core::catalog` for reuse by the data layer
 - **Help popup** — press `F1` or `?` for context-aware keybinding reference overlay
 
 ## [0.1.0] - 2026-03-11

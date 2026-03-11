@@ -128,8 +128,9 @@ crates/
 ├── quiver-core/                   # Library: connection management, config, data layer
 │   └── src/
 │       ├── lib.rs
+│       ├── catalog.rs             # TreeNode / FlatNode schema tree types
 │       ├── config.rs              # TOML configuration loading
-│       └── connection.rs          # Connection profiles and state
+│       └── connection.rs          # Connection profiles, auth, and manager
 └── quiver-tui/                    # Binary: terminal UI
     └── src/
         ├── main.rs                # Entry point, terminal setup, event loop

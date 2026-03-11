@@ -1,7 +1,9 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{List, ListItem};
 
-use crate::app::{App, TreeNodeKind};
+use quiver_core::catalog::TreeNodeKind;
+
+use crate::app::App;
 
 pub fn render_schema_browser(frame: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 || area.width == 0 {

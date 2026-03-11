@@ -7,5 +7,6 @@
 //! - Schema introspection types
 //! - Query execution types
 
+pub mod catalog;
 pub mod config;
 pub mod connection;
