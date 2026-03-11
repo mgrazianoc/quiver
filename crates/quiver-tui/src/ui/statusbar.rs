@@ -12,7 +12,11 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     } else if let Some(ref profile) = app.connected_profile {
         ("●", Color::Green, profile.name.clone())
     } else {
-        ("●", Color::Rgb(100, 100, 100), "No Connection".to_string())
+        (
+            "●",
+            Color::Rgb(100, 100, 100),
+            "No Connection (Ctrl+O)".to_string(),
+        )
     };
 
     let pane_label = app.focused_pane.label();

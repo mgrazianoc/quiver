@@ -33,6 +33,16 @@ pub struct ConnectionProfile {
     pub tls_enabled: bool,
     #[serde(default)]
     pub auth: AuthMethod,
+    /// Connect timeout in seconds (0 = no timeout).
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_secs: u16,
+    /// Max retry attempts for connection (0 = no retries).
+    #[serde(default)]
+    pub max_retries: u8,
+}
+
+fn default_connect_timeout() -> u16 {
+    10
 }
 
 impl Default for ConnectionProfile {
@@ -43,6 +53,8 @@ impl Default for ConnectionProfile {
             port: 8815,
             tls_enabled: false,
             auth: AuthMethod::None,
+            connect_timeout_secs: 10,
+            max_retries: 0,
         }
     }
 }
@@ -207,6 +219,7 @@ mod tests {
                 username: "admin".into(),
                 password: "secret".into(),
             },
+            ..Default::default()
         };
         let toml_str = toml::to_string_pretty(&p).unwrap();
         let decoded: ConnectionProfile = toml::from_str(&toml_str).unwrap();
@@ -279,6 +292,7 @@ mod tests {
                 username: "admin".into(),
                 password: "secret".into(),
             },
+            ..Default::default()
         });
 
         let toml_str = toml::to_string_pretty(&mgr).unwrap();

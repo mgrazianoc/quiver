@@ -35,9 +35,17 @@ fn main() -> Result<()> {
     loop {
         terminal.draw(|frame| ui::render(frame, &mut app))?;
 
-        if let Some(ev) = event_reader.read()? {
-            if app.handle_event(ev) {
-                break;
+        match event_reader.read()? {
+            Some(ev) => {
+                if app.handle_event(ev) {
+                    break;
+                }
+            }
+            None => {
+                // Tick: poll async core for responses even when no input
+                if app.handle_event(event::AppEvent::Tick) {
+                    break;
+                }
             }
         }
     }

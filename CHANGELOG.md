@@ -13,20 +13,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `quiver-tui` (binary) crates
 - **Visible keybinding hints** — status bar now shows
   `F1:Help` and `Ctrl+P:Commands` in accent color
+- **Default context panel** — starts on Connection Manager
+  instead of Server Info for quicker access to saved profiles
 
 ### Added
 
 - **Async bridge** — `CoreHandle` spawns a background tokio runtime
   connected to the TUI event loop via mpsc channels; supports
-  Connect, Disconnect, ExecuteQuery, CancelQuery, and RefreshSchema
-  requests
+  Connect, Disconnect, ExecuteQuery, CancelQuery, RefreshSchema,
+  and TestConnection requests
 - **Live query execution** — press `F5` / `Ctrl+Enter` to run the
   editor contents against the connected Flight SQL server; results
   rendered as rows in the results pane
 - **Query cancellation** — `CancellationToken` integration via
   `tokio::select!`; press `Ctrl+Shift+C` to cancel a running query
 - **Connection dialog** — `Ctrl+O` opens an inline connect popup
-  (host + port); `Ctrl+D` disconnects
+  with Name, Host, Port, TLS toggle, and Auth method selector
+  (None / Basic / Bearer Token); `Ctrl+D` disconnects
+- **Test Connection** — `Ctrl+T` or `[ Test Connection ]` button
+  in the dialog tests connectivity with inline ✓/✗ feedback
+  without closing the dialog
+- **Connection timeouts** — configurable `connect_timeout_secs`
+  (default 10s) applied to the tonic Endpoint; collapsible
+  Advanced section in dialog with Timeout and Max Retries fields
+- **Connection retry** — `max_retries` setting with 500ms delay
+  between attempts on connect failure
+- **Interactive Connection Manager** — context panel lists saved
+  profiles with selection highlight (j/k/↑/↓), green dot for
+  active connection; Enter to connect, `e` to edit, `x` to delete
+- **Edit connection profiles** — press `e` on a saved profile
+  to re-open the connection dialog pre-filled with all settings
+- **Command palette commands** — Connect, Disconnect, Execute
+  Query, Cancel Query, and Refresh Schema added to `Ctrl+P`
+- **Status bar connection hint** — shows "No Connection (Ctrl+O)"
+  when disconnected for discoverability
 - **Schema refresh** — `Ctrl+R` fetches catalogs, schemas, tables,
   and columns from the server and rebuilds the schema browser tree
 - **Schema introspection helpers** — `extract_tables()`,
@@ -41,11 +61,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   info), and transaction management; 33 integration tests against
   an in-process mock server
 - **Connection profiles** — `ConnectionProfile` with host, port, TLS,
-  and `AuthMethod` (None, Basic, Bearer Token); TOML persistence via
-  `ConnectionManager` (`~/.config/quiver/connections.toml`)
+  `AuthMethod` (None, Basic, Bearer Token), connect timeout, and
+  max retries; TOML persistence via `ConnectionManager`
+  (`~/.config/quiver/connections.toml`)
 - **Catalog types** — `TreeNode`, `TreeNodeKind`, `FlatNode` moved to
   `quiver-core::catalog` for reuse by the data layer
 - **Help popup** — press `F1` or `?` for context-aware keybinding reference overlay
+- **Example** — `test_connect` example in quiver-core for quick
+  connection validation (`cargo run --example test_connect -p quiver-core`)
+
+### Fixed
+
+- **Tick polling bug** — main event loop now dispatches `Tick` events
+  when no input is received, so async responses (connection status,
+  query results, schema loads) are actually processed; previously
+  the `None` branch was a no-op, meaning the UI would never update
+  after connecting or running a query until a key was pressed
 
 ### Removed
 

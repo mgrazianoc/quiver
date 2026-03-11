@@ -54,8 +54,15 @@ impl FlightClient {
     /// returning.
     pub async fn connect(profile: &ConnectionProfile) -> Result<Self> {
         let uri = profile.endpoint_uri();
-        let channel = Channel::from_shared(uri.clone())
-            .with_context(|| format!("invalid endpoint URI: {uri}"))?
+        let mut endpoint = Channel::from_shared(uri.clone())
+            .with_context(|| format!("invalid endpoint URI: {uri}"))?;
+
+        if profile.connect_timeout_secs > 0 {
+            endpoint =
+                endpoint.connect_timeout(Duration::from_secs(profile.connect_timeout_secs as u64));
+        }
+
+        let channel = endpoint
             .connect()
             .await
             .with_context(|| format!("failed to connect to {uri}"))?;
@@ -1328,6 +1335,7 @@ mod tests {
                 port: self.addr.port(),
                 tls_enabled: false,
                 auth: AuthMethod::None,
+                ..Default::default()
             }
         }
 
@@ -1416,6 +1424,7 @@ mod tests {
             port: 1, // unlikely to be listening
             tls_enabled: false,
             auth: AuthMethod::None,
+            ..Default::default()
         };
         let result = FlightClient::connect(&profile).await;
         assert!(result.is_err());

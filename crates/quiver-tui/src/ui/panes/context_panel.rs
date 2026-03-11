@@ -126,22 +126,73 @@ fn render_query_history(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_connection_manager(frame: &mut Frame, app: &App, area: Rect) {
-    let lines = vec![
+    let profiles = &app.conn_manager.profiles;
+
+    let mut lines = vec![
         Line::from(vec![Span::styled(
             "Connection Profiles",
             app.theme.result_header,
         )]),
         Line::from(""),
-        Line::styled(
-            "No profiles configured.",
-            Style::default().fg(Color::DarkGray),
-        ),
-        Line::from(""),
-        Line::styled(
-            "Add connections in ~/.config/quiver/connections.toml",
-            Style::default().fg(Color::DarkGray),
-        ),
     ];
+
+    if profiles.is_empty() {
+        lines.push(Line::styled(
+            "No profiles saved.",
+            Style::default().fg(Color::DarkGray),
+        ));
+        lines.push(Line::from(""));
+        lines.push(Line::styled(
+            "Press Ctrl+O to add a new connection,",
+            Style::default().fg(Color::DarkGray),
+        ));
+        lines.push(Line::styled(
+            "or edit ~/.config/quiver/connections.toml",
+            Style::default().fg(Color::DarkGray),
+        ));
+    } else {
+        for (i, profile) in profiles.iter().enumerate() {
+            let is_selected = i == app.conn_manager_selected;
+            let is_connected = app
+                .connected_profile
+                .as_ref()
+                .is_some_and(|c| c.name == profile.name);
+
+            let marker = if is_connected {
+                Span::styled("● ", Style::default().fg(Color::Green))
+            } else {
+                Span::styled("  ", Style::default())
+            };
+
+            let name_style = if is_selected {
+                Style::default()
+                    .fg(app.theme.bg)
+                    .bg(app.theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.fg)
+            };
+
+            let endpoint = format!(" {}:{}", profile.host, profile.port);
+            let endpoint_style = if is_selected {
+                Style::default().fg(app.theme.bg).bg(app.theme.accent)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
+            lines.push(Line::from(vec![
+                marker,
+                Span::styled(format!(" {} ", profile.name), name_style),
+                Span::styled(endpoint, endpoint_style),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::styled(
+            "↑/↓ select  Enter connect  e edit  x delete  Ctrl+O new",
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
 
     let widget = Paragraph::new(lines).style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
     frame.render_widget(widget, area);

@@ -83,6 +83,36 @@ impl CommandEntry {
                 "F1 / ?",
                 CommandAction::ShowHelp,
             ),
+            Self::new(
+                "Connect to Server",
+                "Connection",
+                "Ctrl+O",
+                CommandAction::Connect,
+            ),
+            Self::new(
+                "Disconnect",
+                "Connection",
+                "Ctrl+D",
+                CommandAction::Disconnect,
+            ),
+            Self::new(
+                "Execute Query",
+                "Query",
+                "F5 / Ctrl+Enter",
+                CommandAction::ExecuteQuery,
+            ),
+            Self::new(
+                "Cancel Query",
+                "Query",
+                "Ctrl+Shift+C",
+                CommandAction::CancelQuery,
+            ),
+            Self::new(
+                "Refresh Schema",
+                "Connection",
+                "Ctrl+R",
+                CommandAction::RefreshSchema,
+            ),
         ]
     }
 }

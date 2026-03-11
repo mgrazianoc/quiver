@@ -20,8 +20,9 @@ and wired to a live Flight SQL backend via an async bridge.
 The project is a Cargo workspace with `quiver-core`
 (connection/data layer) and `quiver-tui` (terminal UI).
 You can connect to any Flight SQL server, execute queries,
-browse the catalog schema tree, and cancel running queries —
-all from the terminal.
+browse the catalog schema tree, cancel running queries,
+manage saved connection profiles, and test connections
+before committing — all from the terminal.
 
 [flight-sql]: https://arrow.apache.org/docs/format/FlightSql.html
 
@@ -70,6 +71,27 @@ quiver -c 'SELECT 1' --conn dev # Non-interactive mode (future)
 | `Ctrl+O` | Open connection dialog |
 | `Ctrl+D` | Disconnect |
 | `Ctrl+R` | Refresh schema tree |
+
+### Connection Dialog
+
+| Key | Action |
+| --- | --- |
+| `Tab` / `↑/↓` | Cycle fields |
+| `Space` / `←/→` | Toggle TLS / cycle auth |
+| `Ctrl+A` | Toggle advanced options (timeout, retries) |
+| `Ctrl+T` | Test connection (inline feedback) |
+| `Enter` | Connect (or activate focused button) |
+| `Esc` | Cancel |
+
+### Connection Manager (Context Panel)
+
+| Key | Action |
+| --- | --- |
+| `j/k` or `↑/↓` | Select profile |
+| `Enter` | Connect to selected profile |
+| `e` | Edit selected profile |
+| `x` / `Delete` | Remove selected profile |
+| `g` / `G` | Jump to first / last |
 
 ### Editor
 
@@ -134,6 +156,8 @@ Requires:
 Cargo.toml                         # Workspace root
 crates/
 ├── quiver-core/                   # Library: connection management, config, data layer
+│   ├── examples/
+│   │   └── test_connect.rs        # Connection test example
 │   └── src/
 │       ├── lib.rs
 │       ├── bridge.rs              # Async bridge (TUI ↔ tokio runtime)

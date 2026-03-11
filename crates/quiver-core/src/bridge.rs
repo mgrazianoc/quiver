@@ -32,6 +32,8 @@ pub enum CoreRequest {
     CancelQuery,
     /// Refresh the schema browser tree.
     RefreshSchema,
+    /// Test a connection without persisting it.
+    TestConnection(ConnectionProfile),
 }
 
 /// Responses the async runtime sends back to the TUI.
@@ -50,6 +52,8 @@ pub enum CoreResponse {
     SchemaLoaded(Vec<TreeNode>),
     /// An operation failed.
     Error { operation: String, message: String },
+    /// Test connection result.
+    TestResult { success: bool, message: String },
 }
 
 // ── Core handle ───────────────────────────────────────────────
@@ -103,21 +107,38 @@ async fn core_loop(
 
     while let Some(req) = rx.recv().await {
         match req {
-            CoreRequest::Connect(profile) => match FlightClient::connect(&profile).await {
-                Ok(c) => {
-                    client = Some(c);
-                    let _ = tx.send(CoreResponse::Connected {
-                        profile,
-                        server_info: Vec::new(),
-                    });
+            CoreRequest::Connect(profile) => {
+                let max_attempts = (profile.max_retries as usize) + 1;
+                let mut last_err = String::new();
+                let mut connected = false;
+
+                for attempt in 1..=max_attempts {
+                    match FlightClient::connect(&profile).await {
+                        Ok(c) => {
+                            client = Some(c);
+                            let _ = tx.send(CoreResponse::Connected {
+                                profile: profile.clone(),
+                                server_info: Vec::new(),
+                            });
+                            connected = true;
+                            break;
+                        }
+                        Err(e) => {
+                            last_err = e.to_string();
+                            if attempt < max_attempts {
+                                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            }
+                        }
+                    }
                 }
-                Err(e) => {
+
+                if !connected {
                     let _ = tx.send(CoreResponse::Error {
                         operation: "connect".into(),
-                        message: e.to_string(),
+                        message: last_err,
                     });
                 }
-            },
+            }
 
             CoreRequest::Disconnect => {
                 if let Some(mut c) = client.take() {
@@ -177,6 +198,22 @@ async fn core_loop(
                     });
                 }
             }
+
+            CoreRequest::TestConnection(profile) => match FlightClient::connect(&profile).await {
+                Ok(mut c) => {
+                    let _ = c.close().await;
+                    let _ = tx.send(CoreResponse::TestResult {
+                        success: true,
+                        message: format!("Connected to {}", profile.endpoint_uri()),
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(CoreResponse::TestResult {
+                        success: false,
+                        message: e.to_string(),
+                    });
+                }
+            },
         }
     }
 }

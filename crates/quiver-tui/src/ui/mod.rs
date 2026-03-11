@@ -7,7 +7,7 @@ pub mod tabs;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear};
 
-use crate::app::{App, ConnectField, LayoutPreset, Pane};
+use crate::app::{App, ConnectAuthKind, ConnectField, LayoutPreset, Pane};
 
 /// Top-level render function. Computes layout, renders panes, overlays.
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -72,8 +72,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // ── Connection dialog overlay ─────────────────────────────
     if app.connect_dialog_open {
-        let dialog_width = 50u16.min(area.width.saturating_sub(4));
-        let dialog_height = 10u16.min(area.height.saturating_sub(4));
+        let dialog_width = 64u16.min(area.width.saturating_sub(4));
+        let dialog_height = 24u16.min(area.height.saturating_sub(4));
         let dialog_area = centered_rect(dialog_width, dialog_height, area);
         frame.render_widget(Clear, dialog_area);
         render_connect_dialog(frame, app, dialog_area);
@@ -235,47 +235,184 @@ fn render_connect_dialog(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if inner.height < 4 || inner.width < 10 {
+    if inner.height < 6 || inner.width < 20 {
         return;
     }
 
-    let host_style = if app.connect_field == ConnectField::Host {
-        Style::default().fg(app.theme.accent)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    let port_style = if app.connect_field == ConnectField::Port {
-        Style::default().fg(app.theme.accent)
-    } else {
-        Style::default().fg(Color::DarkGray)
+    let field_style = |field: ConnectField| -> Style {
+        if app.connect_field == field {
+            Style::default().fg(app.theme.accent)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        }
     };
 
-    let lines = vec![
-        Line::from(vec![
-            Span::styled(" Host: ", app.theme.result_header),
-            Span::styled(&app.connect_host, host_style),
-            if app.connect_field == ConnectField::Host {
-                Span::styled("_", Style::default().fg(app.theme.accent))
-            } else {
-                Span::raw("")
-            },
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled(" Port: ", app.theme.result_header),
-            Span::styled(&app.connect_port, port_style),
-            if app.connect_field == ConnectField::Port {
-                Span::styled("_", Style::default().fg(app.theme.accent))
-            } else {
-                Span::raw("")
-            },
-        ]),
-        Line::from(""),
-        Line::styled(
-            " Enter to connect  |  Tab to switch  |  Esc to cancel",
-            Style::default().fg(Color::DarkGray),
+    let cursor = |field: ConnectField| -> Span<'_> {
+        if app.connect_field == field {
+            Span::styled("_", Style::default().fg(app.theme.accent))
+        } else {
+            Span::raw("")
+        }
+    };
+
+    let label_style = app.theme.result_header;
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Name
+    lines.push(Line::from(vec![
+        Span::styled(" Name:     ", label_style),
+        Span::styled(&app.connect_name, field_style(ConnectField::Name)),
+        cursor(ConnectField::Name),
+    ]));
+
+    // Host
+    lines.push(Line::from(vec![
+        Span::styled(" Host:     ", label_style),
+        Span::styled(&app.connect_host, field_style(ConnectField::Host)),
+        cursor(ConnectField::Host),
+    ]));
+
+    // Port
+    lines.push(Line::from(vec![
+        Span::styled(" Port:     ", label_style),
+        Span::styled(&app.connect_port, field_style(ConnectField::Port)),
+        cursor(ConnectField::Port),
+    ]));
+
+    // TLS
+    let tls_label = if app.connect_tls {
+        "[x] TLS"
+    } else {
+        "[ ] TLS"
+    };
+    lines.push(Line::from(vec![
+        Span::styled(" TLS:      ", label_style),
+        Span::styled(tls_label, field_style(ConnectField::Tls)),
+    ]));
+
+    // Separator
+    lines.push(Line::styled(
+        " \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    // Auth method
+    lines.push(Line::from(vec![
+        Span::styled(" Auth:     ", label_style),
+        Span::styled(
+            format!("< {} >", app.connect_auth.label()),
+            field_style(ConnectField::Auth),
         ),
-    ];
+    ]));
+
+    // Auth-specific fields
+    match app.connect_auth {
+        ConnectAuthKind::None => {}
+        ConnectAuthKind::Basic => {
+            lines.push(Line::from(vec![
+                Span::styled(" Username: ", label_style),
+                Span::styled(&app.connect_username, field_style(ConnectField::Username)),
+                cursor(ConnectField::Username),
+            ]));
+            let masked: String = "\u{2022}".repeat(app.connect_password.len());
+            lines.push(Line::from(vec![
+                Span::styled(" Password: ", label_style),
+                Span::styled(masked, field_style(ConnectField::Password)),
+                cursor(ConnectField::Password),
+            ]));
+        }
+        ConnectAuthKind::Bearer => {
+            lines.push(Line::from(vec![
+                Span::styled(" Token:    ", label_style),
+                Span::styled(&app.connect_token, field_style(ConnectField::Token)),
+                cursor(ConnectField::Token),
+            ]));
+        }
+    }
+
+    // Advanced section
+    let adv_arrow = if app.connect_advanced_open {
+        "\u{25be}"
+    } else {
+        "\u{25b8}"
+    };
+    lines.push(Line::styled(
+        format!(" {} Advanced (Ctrl+A)", adv_arrow),
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    if app.connect_advanced_open {
+        lines.push(Line::from(vec![
+            Span::styled("   Timeout: ", label_style),
+            Span::styled(&app.connect_timeout, field_style(ConnectField::ConnTimeout)),
+            cursor(ConnectField::ConnTimeout),
+            Span::styled(" s", Style::default().fg(Color::DarkGray)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("   Retries: ", label_style),
+            Span::styled(
+                &app.connect_max_retries,
+                field_style(ConnectField::MaxRetries),
+            ),
+            cursor(ConnectField::MaxRetries),
+        ]));
+    }
+
+    // Separator before buttons
+    lines.push(Line::from(""));
+
+    // Test Connection button
+    let test_style = if app.connect_field == ConnectField::TestButton {
+        Style::default()
+            .fg(app.theme.bg)
+            .bg(app.theme.accent)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(app.theme.accent)
+            .add_modifier(Modifier::BOLD)
+    };
+    let test_label = if app.connect_testing {
+        " [ Testing\u{2026} ] "
+    } else {
+        " [ Test Connection ] "
+    };
+    lines.push(Line::from(vec![
+        Span::raw(" "),
+        Span::styled(test_label, test_style),
+    ]));
+
+    // Test result feedback
+    if let Some((success, ref msg)) = app.connect_test_status {
+        if !app.connect_testing {
+            let (icon, color) = if success {
+                ("\u{2713}", Color::Green)
+            } else {
+                ("\u{2717}", Color::Red)
+            };
+            // Truncate long error messages to fit dialog
+            let max_msg_len = inner.width.saturating_sub(6) as usize;
+            let display_msg = if msg.len() > max_msg_len {
+                format!("{}...", &msg[..max_msg_len.saturating_sub(3)])
+            } else {
+                msg.clone()
+            };
+            lines.push(Line::from(vec![
+                Span::raw(" "),
+                Span::styled(
+                    format!(" {} {} ", icon, display_msg),
+                    Style::default().fg(color),
+                ),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::styled(
+        " Enter connect \u{2502} Ctrl+T test \u{2502} Tab/\u{2191}\u{2193} switch \u{2502} Esc cancel",
+        Style::default().fg(Color::DarkGray),
+    ));
 
     let paragraph = Paragraph::new(lines).style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
     frame.render_widget(paragraph, inner);

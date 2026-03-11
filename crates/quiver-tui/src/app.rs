@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use quiver_core::bridge::{CoreHandle, CoreRequest, CoreResponse};
 use quiver_core::catalog::{FlatNode, TreeNode};
-use quiver_core::connection::ConnectionProfile;
+use quiver_core::connection::{AuthMethod, ConnectionManager, ConnectionProfile};
 
 use crate::event::AppEvent;
 use crate::keybindings::KeyMode;
@@ -97,8 +97,71 @@ impl ContextMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectField {
+    Name,
     Host,
     Port,
+    Tls,
+    Auth,
+    Username,
+    Password,
+    Token,
+    ConnTimeout,
+    MaxRetries,
+    TestButton,
+}
+
+impl ConnectField {
+    /// Return all fields visible for the given auth method and advanced toggle.
+    fn visible_fields(auth: ConnectAuthKind, advanced_open: bool) -> Vec<ConnectField> {
+        let mut fields = vec![
+            ConnectField::Name,
+            ConnectField::Host,
+            ConnectField::Port,
+            ConnectField::Tls,
+            ConnectField::Auth,
+        ];
+        match auth {
+            ConnectAuthKind::None => {}
+            ConnectAuthKind::Basic => {
+                fields.push(ConnectField::Username);
+                fields.push(ConnectField::Password);
+            }
+            ConnectAuthKind::Bearer => {
+                fields.push(ConnectField::Token);
+            }
+        }
+        if advanced_open {
+            fields.push(ConnectField::ConnTimeout);
+            fields.push(ConnectField::MaxRetries);
+        }
+        fields.push(ConnectField::TestButton);
+        fields
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectAuthKind {
+    None,
+    Basic,
+    Bearer,
+}
+
+impl ConnectAuthKind {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ConnectAuthKind::None => "None",
+            ConnectAuthKind::Basic => "Basic (user/pass)",
+            ConnectAuthKind::Bearer => "Bearer Token",
+        }
+    }
+
+    pub fn cycle_next(&self) -> Self {
+        match self {
+            ConnectAuthKind::None => ConnectAuthKind::Basic,
+            ConnectAuthKind::Basic => ConnectAuthKind::Bearer,
+            ConnectAuthKind::Bearer => ConnectAuthKind::None,
+        }
+    }
 }
 
 // ── Query tab ─────────────────────────────────────────────────
@@ -244,11 +307,26 @@ pub struct App {
     pub server_info: Vec<(String, String)>,
     pub query_running: bool,
 
+    // ── Connection manager ─────────────────────────────────────
+    pub conn_manager: ConnectionManager,
+    pub conn_manager_selected: usize,
+
     // ── Connection dialog ─────────────────────────────────────
     pub connect_dialog_open: bool,
+    pub connect_name: String,
     pub connect_host: String,
     pub connect_port: String,
+    pub connect_tls: bool,
+    pub connect_auth: ConnectAuthKind,
+    pub connect_username: String,
+    pub connect_password: String,
+    pub connect_token: String,
     pub connect_field: ConnectField,
+    pub connect_advanced_open: bool,
+    pub connect_timeout: String,
+    pub connect_max_retries: String,
+    pub connect_test_status: Option<(bool, String)>,
+    pub connect_testing: bool,
 }
 
 impl App {
@@ -272,7 +350,7 @@ impl App {
             command_palette_cursor: 0,
             command_palette_selected: 0,
             commands: CommandEntry::default_commands(),
-            context_mode: ContextMode::ServerInfo,
+            context_mode: ContextMode::ConnectionManager,
             schema_tree: Vec::new(),
             schema_selected: 0,
             schema_filter: String::new(),
@@ -290,10 +368,23 @@ impl App {
             connected_profile: None,
             server_info: Vec::new(),
             query_running: false,
+            conn_manager: ConnectionManager::load(),
+            conn_manager_selected: 0,
             connect_dialog_open: false,
+            connect_name: String::new(),
             connect_host: "localhost".into(),
             connect_port: "8815".into(),
-            connect_field: ConnectField::Host,
+            connect_tls: false,
+            connect_auth: ConnectAuthKind::None,
+            connect_username: String::new(),
+            connect_password: String::new(),
+            connect_token: String::new(),
+            connect_field: ConnectField::Name,
+            connect_advanced_open: false,
+            connect_timeout: "10".into(),
+            connect_max_retries: "0".into(),
+            connect_test_status: None,
+            connect_testing: false,
         };
         app.create_tab();
         app
@@ -416,7 +507,9 @@ impl App {
             // Connect dialog: Ctrl+O
             KeyCode::Char('o') if ctrl => {
                 self.connect_dialog_open = true;
-                self.connect_field = ConnectField::Host;
+                self.connect_field = ConnectField::Name;
+                self.connect_test_status = None;
+                self.connect_testing = false;
                 return false;
             }
 
@@ -548,7 +641,7 @@ impl App {
             Pane::Editor => self.handle_editor_key(key),
             Pane::Results => self.handle_results_key(key),
             Pane::SchemaBrowser => self.handle_schema_key(key),
-            Pane::ContextPanel => {} // placeholder
+            Pane::ContextPanel => self.handle_context_key(key),
         }
     }
 
@@ -625,6 +718,10 @@ impl App {
                     }
                     self.notify(format!("{}: {}", operation, message));
                 }
+                CoreResponse::TestResult { success, message } => {
+                    self.connect_testing = false;
+                    self.connect_test_status = Some((success, message));
+                }
             }
         }
     }
@@ -656,6 +753,7 @@ impl App {
     }
 
     fn submit_connection(&mut self) {
+        let name = self.connect_name.trim().to_string();
         let host = self.connect_host.trim().to_string();
         let port: u16 = match self.connect_port.trim().parse() {
             Ok(p) => p,
@@ -665,14 +763,42 @@ impl App {
             }
         };
 
+        let connect_timeout: u16 = self.connect_timeout.trim().parse().unwrap_or(10);
+        let max_retries: u8 = self.connect_max_retries.trim().parse().unwrap_or(0);
+
+        let profile_name = if name.is_empty() {
+            format!("{}:{}", host, port)
+        } else {
+            name
+        };
+
+        let auth = match self.connect_auth {
+            ConnectAuthKind::None => AuthMethod::None,
+            ConnectAuthKind::Basic => AuthMethod::Basic {
+                username: self.connect_username.trim().to_string(),
+                password: self.connect_password.clone(),
+            },
+            ConnectAuthKind::Bearer => AuthMethod::BearerToken {
+                token: self.connect_token.clone(),
+            },
+        };
+
         let profile = ConnectionProfile {
-            name: format!("{}:{}", host, port),
+            name: profile_name,
             host,
             port,
-            ..ConnectionProfile::default()
+            tls_enabled: self.connect_tls,
+            auth,
+            connect_timeout_secs: connect_timeout,
+            max_retries,
         };
 
         self.connect_dialog_open = false;
+
+        // Save profile to connection manager
+        self.conn_manager.upsert(profile.clone());
+        let _ = self.conn_manager.save();
+
         self.notify(format!("Connecting to {}...", profile.name));
         self.core.send(CoreRequest::Connect(profile));
     }
@@ -1002,6 +1128,34 @@ impl App {
             CommandAction::ShowHelp => {
                 self.help_open = !self.help_open;
             }
+            CommandAction::Connect => {
+                self.connect_dialog_open = true;
+                self.connect_field = ConnectField::Name;
+                self.connect_test_status = None;
+                self.connect_testing = false;
+            }
+            CommandAction::Disconnect => {
+                if self.connected_profile.is_some() {
+                    self.core.send(CoreRequest::Disconnect);
+                } else {
+                    self.notify("Not connected".to_string());
+                }
+            }
+            CommandAction::ExecuteQuery => {
+                self.execute_current_query();
+            }
+            CommandAction::CancelQuery => {
+                if self.query_running {
+                    self.core.send(CoreRequest::CancelQuery);
+                    self.notify("Cancelling query...".to_string());
+                }
+            }
+            CommandAction::RefreshSchema => {
+                if self.connected_profile.is_some() {
+                    self.core.send(CoreRequest::RefreshSchema);
+                    self.notify("Refreshing schema...".to_string());
+                }
+            }
         }
         false
     }
@@ -1068,39 +1222,245 @@ impl App {
         }
     }
 
+    // ── Context panel (Connection Manager mode) ──────────────
+
+    fn handle_context_key(&mut self, key: KeyEvent) {
+        if self.context_mode != ContextMode::ConnectionManager {
+            return;
+        }
+        let count = self.conn_manager.profiles.len();
+        if count == 0 {
+            return;
+        }
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.conn_manager_selected + 1 < count {
+                    self.conn_manager_selected += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.conn_manager_selected = self.conn_manager_selected.saturating_sub(1);
+            }
+            KeyCode::Enter => {
+                if let Some(profile) = self.conn_manager.profiles.get(self.conn_manager_selected) {
+                    let profile = profile.clone();
+                    self.notify(format!("Connecting to {}...", profile.name));
+                    self.core.send(CoreRequest::Connect(profile));
+                }
+            }
+            KeyCode::Char('g') => {
+                self.conn_manager_selected = 0;
+            }
+            KeyCode::Char('G') => {
+                self.conn_manager_selected = count.saturating_sub(1);
+            }
+            KeyCode::Char('e') => {
+                if let Some(profile) = self.conn_manager.profiles.get(self.conn_manager_selected) {
+                    self.open_connect_dialog_from_profile(profile.clone());
+                }
+            }
+            KeyCode::Delete | KeyCode::Char('x') => {
+                let name = self.conn_manager.profiles[self.conn_manager_selected]
+                    .name
+                    .clone();
+                self.conn_manager.remove(&name);
+                let _ = self.conn_manager.save();
+                if self.conn_manager_selected >= self.conn_manager.profiles.len()
+                    && self.conn_manager_selected > 0
+                {
+                    self.conn_manager_selected -= 1;
+                }
+                self.notify(format!("Removed profile: {}", name));
+            }
+            _ => {}
+        }
+    }
+
     // ── Connection dialog ─────────────────────────────────────
+
+    fn open_connect_dialog_from_profile(&mut self, profile: ConnectionProfile) {
+        self.connect_name = profile.name;
+        self.connect_host = profile.host;
+        self.connect_port = profile.port.to_string();
+        self.connect_tls = profile.tls_enabled;
+        self.connect_auth = match &profile.auth {
+            AuthMethod::None => ConnectAuthKind::None,
+            AuthMethod::Basic { .. } => ConnectAuthKind::Basic,
+            AuthMethod::BearerToken { .. } => ConnectAuthKind::Bearer,
+        };
+        match profile.auth {
+            AuthMethod::None => {
+                self.connect_username.clear();
+                self.connect_password.clear();
+                self.connect_token.clear();
+            }
+            AuthMethod::Basic { username, password } => {
+                self.connect_username = username;
+                self.connect_password = password;
+                self.connect_token.clear();
+            }
+            AuthMethod::BearerToken { token } => {
+                self.connect_username.clear();
+                self.connect_password.clear();
+                self.connect_token = token;
+            }
+        }
+        self.connect_timeout = profile.connect_timeout_secs.to_string();
+        self.connect_max_retries = profile.max_retries.to_string();
+        self.connect_field = ConnectField::Name;
+        self.connect_test_status = None;
+        self.connect_testing = false;
+        self.connect_dialog_open = true;
+    }
 
     fn handle_connect_dialog_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Esc => {
                 self.connect_dialog_open = false;
+                self.connect_test_status = None;
+                self.connect_testing = false;
             }
             KeyCode::Enter => {
-                self.submit_connection();
+                if self.connect_field == ConnectField::TestButton {
+                    self.test_connection();
+                } else {
+                    self.submit_connection();
+                }
             }
-            KeyCode::Tab => {
-                self.connect_field = match self.connect_field {
-                    ConnectField::Host => ConnectField::Port,
-                    ConnectField::Port => ConnectField::Host,
-                };
+            KeyCode::Tab | KeyCode::Down => {
+                let fields =
+                    ConnectField::visible_fields(self.connect_auth, self.connect_advanced_open);
+                if let Some(pos) = fields.iter().position(|f| *f == self.connect_field) {
+                    self.connect_field = fields[(pos + 1) % fields.len()];
+                }
+            }
+            KeyCode::BackTab | KeyCode::Up => {
+                let fields =
+                    ConnectField::visible_fields(self.connect_auth, self.connect_advanced_open);
+                if let Some(pos) = fields.iter().position(|f| *f == self.connect_field) {
+                    self.connect_field = fields[(pos + fields.len() - 1) % fields.len()];
+                }
+            }
+            // Toggle fields (TLS, Auth kind)
+            KeyCode::Left | KeyCode::Right if self.connect_field == ConnectField::Tls => {
+                self.connect_tls = !self.connect_tls;
+            }
+            KeyCode::Char(' ') if self.connect_field == ConnectField::Tls => {
+                self.connect_tls = !self.connect_tls;
+            }
+            KeyCode::Left | KeyCode::Right if self.connect_field == ConnectField::Auth => {
+                self.connect_auth = self.connect_auth.cycle_next();
+                // Reset field if current one is no longer visible
+                let fields =
+                    ConnectField::visible_fields(self.connect_auth, self.connect_advanced_open);
+                if !fields.contains(&self.connect_field) {
+                    self.connect_field = ConnectField::Auth;
+                }
+            }
+            KeyCode::Char(' ') if self.connect_field == ConnectField::Auth => {
+                self.connect_auth = self.connect_auth.cycle_next();
+                let fields =
+                    ConnectField::visible_fields(self.connect_auth, self.connect_advanced_open);
+                if !fields.contains(&self.connect_field) {
+                    self.connect_field = ConnectField::Auth;
+                }
+            }
+            // Test button via Space
+            KeyCode::Char(' ') if self.connect_field == ConnectField::TestButton => {
+                self.test_connection();
+            }
+            // Ctrl+T to test connection from anywhere in the dialog
+            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.test_connection();
+            }
+            // Ctrl+A to toggle advanced section
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.connect_advanced_open = !self.connect_advanced_open;
+                // If closing advanced and field was there, move to TestButton
+                if !self.connect_advanced_open
+                    && matches!(
+                        self.connect_field,
+                        ConnectField::ConnTimeout | ConnectField::MaxRetries
+                    )
+                {
+                    self.connect_field = ConnectField::TestButton;
+                }
             }
             KeyCode::Backspace => {
                 let field = match self.connect_field {
+                    ConnectField::Name => &mut self.connect_name,
                     ConnectField::Host => &mut self.connect_host,
                     ConnectField::Port => &mut self.connect_port,
+                    ConnectField::Username => &mut self.connect_username,
+                    ConnectField::Password => &mut self.connect_password,
+                    ConnectField::Token => &mut self.connect_token,
+                    ConnectField::ConnTimeout => &mut self.connect_timeout,
+                    ConnectField::MaxRetries => &mut self.connect_max_retries,
+                    ConnectField::Tls | ConnectField::Auth | ConnectField::TestButton => {
+                        return false
+                    }
                 };
                 field.pop();
             }
             KeyCode::Char(c) => {
                 let field = match self.connect_field {
+                    ConnectField::Name => &mut self.connect_name,
                     ConnectField::Host => &mut self.connect_host,
                     ConnectField::Port => &mut self.connect_port,
+                    ConnectField::Username => &mut self.connect_username,
+                    ConnectField::Password => &mut self.connect_password,
+                    ConnectField::Token => &mut self.connect_token,
+                    ConnectField::ConnTimeout => &mut self.connect_timeout,
+                    ConnectField::MaxRetries => &mut self.connect_max_retries,
+                    ConnectField::Tls | ConnectField::Auth | ConnectField::TestButton => {
+                        return false
+                    }
                 };
                 field.push(c);
             }
             _ => {}
         }
         false
+    }
+
+    fn test_connection(&mut self) {
+        if self.connect_testing {
+            return;
+        }
+        let host = self.connect_host.trim().to_string();
+        let port: u16 = match self.connect_port.trim().parse() {
+            Ok(p) => p,
+            Err(_) => {
+                self.connect_test_status = Some((false, "Invalid port number".into()));
+                return;
+            }
+        };
+        let connect_timeout: u16 = self.connect_timeout.trim().parse().unwrap_or(10);
+
+        let auth = match self.connect_auth {
+            ConnectAuthKind::None => AuthMethod::None,
+            ConnectAuthKind::Basic => AuthMethod::Basic {
+                username: self.connect_username.trim().to_string(),
+                password: self.connect_password.clone(),
+            },
+            ConnectAuthKind::Bearer => AuthMethod::BearerToken {
+                token: self.connect_token.clone(),
+            },
+        };
+
+        let profile = ConnectionProfile {
+            name: String::new(),
+            host,
+            port,
+            tls_enabled: self.connect_tls,
+            auth,
+            connect_timeout_secs: connect_timeout,
+            max_retries: 0,
+        };
+
+        self.connect_testing = true;
+        self.connect_test_status = Some((true, "Testing…".into()));
+        self.core.send(CoreRequest::TestConnection(profile));
     }
 }
 
@@ -1119,6 +1479,11 @@ pub enum CommandAction {
     PinTab,
     DuplicateTab,
     ShowHelp,
+    Connect,
+    Disconnect,
+    ExecuteQuery,
+    CancelQuery,
+    RefreshSchema,
 }
 
 // ── Tests ─────────────────────────────────────────────────────
@@ -1328,15 +1693,15 @@ mod tests {
     #[test]
     fn context_mode_cycles() {
         let mut app = App::new();
-        assert_eq!(app.context_mode, ContextMode::ServerInfo);
-        app.handle_event(AppEvent::Key(key_ctrl(KeyCode::Char('j'))));
-        assert_eq!(app.context_mode, ContextMode::QueryHistory);
-        app.handle_event(AppEvent::Key(key_ctrl(KeyCode::Char('j'))));
         assert_eq!(app.context_mode, ContextMode::ConnectionManager);
         app.handle_event(AppEvent::Key(key_ctrl(KeyCode::Char('j'))));
         assert_eq!(app.context_mode, ContextMode::StreamMonitor);
         app.handle_event(AppEvent::Key(key_ctrl(KeyCode::Char('j'))));
         assert_eq!(app.context_mode, ContextMode::ServerInfo);
+        app.handle_event(AppEvent::Key(key_ctrl(KeyCode::Char('j'))));
+        assert_eq!(app.context_mode, ContextMode::QueryHistory);
+        app.handle_event(AppEvent::Key(key_ctrl(KeyCode::Char('j'))));
+        assert_eq!(app.context_mode, ContextMode::ConnectionManager);
     }
 
     // ── Theme cycling ─────────────────────────────────────────
