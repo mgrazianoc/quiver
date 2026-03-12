@@ -66,7 +66,7 @@ quiver -c 'SELECT 1' --conn dev # Non-interactive mode (future)
 | `Ctrl+L` | Cycle layout preset |
 | `Ctrl+K` | Cycle theme |
 | `Ctrl+J` | Cycle context panel mode |
-| `F5` / `Ctrl+Enter` | Execute query |
+| `Ctrl+E` | Execute query |
 | `Ctrl+Shift+C` | Cancel running query |
 | `Ctrl+O` | Open connection dialog |
 | `Ctrl+D` | Disconnect |

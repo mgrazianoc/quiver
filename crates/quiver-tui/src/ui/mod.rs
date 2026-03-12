@@ -192,7 +192,7 @@ fn render_pane(frame: &mut Frame, app: &mut App, pane: Pane, area: Rect, zoomed:
         format!(" {} ", pane.label())
     };
 
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
         .title(title)
@@ -202,6 +202,14 @@ fn render_pane(frame: &mut Frame, app: &mut App, pane: Pane, area: Rect, zoomed:
             border_style
         })
         .style(Style::default().bg(app.theme.bg));
+
+    // Show run hint on the Editor pane
+    if pane == Pane::Editor {
+        block = block.title_top(
+            Line::from(Span::styled(" Ctrl+E Run ", Style::default().fg(Color::DarkGray)))
+                .alignment(Alignment::Right),
+        );
+    }
 
     let inner = block.inner(area);
     frame.render_widget(block, area);

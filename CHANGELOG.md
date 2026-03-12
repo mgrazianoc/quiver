@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connected to the TUI event loop via mpsc channels; supports
   Connect, Disconnect, ExecuteQuery, CancelQuery, RefreshSchema,
   and TestConnection requests
-- **Live query execution** — press `F5` / `Ctrl+Enter` to run the
+- **Live query execution** — press `Ctrl+E` to run the
   editor contents against the connected Flight SQL server; results
   rendered as rows in the results pane
 - **Query cancellation** — `CancellationToken` integration via
@@ -77,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   query results, schema loads) are actually processed; previously
   the `None` branch was a no-op, meaning the UI would never update
   after connecting or running a query until a key was pressed
+- **Keybinding compatibility** — replaced terminal-dependent shortcuts
+  (F5, Ctrl+Enter, Shift+Enter) with universal `Ctrl+E` for query
+  execution; enabled Kitty keyboard protocol for better modifier
+  key detection; Tab no longer conflicts with SQL indentation
+  in the editor pane
 
 ### Removed
 

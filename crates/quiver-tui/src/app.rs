@@ -485,12 +485,8 @@ impl App {
                 return false;
             }
 
-            // Execute query: F5 or Ctrl+Enter
-            KeyCode::F(5) => {
-                self.execute_current_query();
-                return false;
-            }
-            KeyCode::Enter if ctrl => {
+            // Execute query: Ctrl+E
+            KeyCode::Char('e') if ctrl => {
                 self.execute_current_query();
                 return false;
             }
@@ -591,11 +587,11 @@ impl App {
                 }
             }
 
-            // Pane cycle: Tab / Shift+Tab
-            KeyCode::Tab if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Pane cycle: Tab / Shift+Tab (Tab inserts spaces when in Editor)
+            KeyCode::BackTab => {
                 self.cycle_pane_focus(false);
             }
-            KeyCode::Tab if !ctrl && self.focused_pane != Pane::Editor => {
+            KeyCode::Tab if self.focused_pane != Pane::Editor => {
                 self.cycle_pane_focus(true);
             }
 
@@ -1370,11 +1366,15 @@ impl App {
                 self.test_connection();
             }
             // Ctrl+T to test connection from anywhere in the dialog
-            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('t')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.test_connection();
             }
             // Ctrl+A to toggle advanced section
-            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('a')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
                 self.connect_advanced_open = !self.connect_advanced_open;
                 // If closing advanced and field was there, move to TestButton
                 if !self.connect_advanced_open

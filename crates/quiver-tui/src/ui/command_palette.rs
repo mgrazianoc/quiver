@@ -98,7 +98,7 @@ impl CommandEntry {
             Self::new(
                 "Execute Query",
                 "Query",
-                "F5 / Ctrl+Enter",
+                "Ctrl+E",
                 CommandAction::ExecuteQuery,
             ),
             Self::new(
