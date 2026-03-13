@@ -113,6 +113,30 @@ impl CommandEntry {
                 "Ctrl+R",
                 CommandAction::RefreshSchema,
             ),
+            Self::new(
+                "Export Results as CSV",
+                "Export",
+                "Ctrl+S",
+                CommandAction::ExportCsv,
+            ),
+            Self::new(
+                "Export Results as JSON",
+                "Export",
+                "",
+                CommandAction::ExportJson,
+            ),
+            Self::new(
+                "Export Results as Parquet",
+                "Export",
+                "",
+                CommandAction::ExportParquet,
+            ),
+            Self::new(
+                "Copy Results to Clipboard",
+                "Export",
+                "Ctrl+Shift+S",
+                CommandAction::CopyToClipboard,
+            ),
         ]
     }
 }

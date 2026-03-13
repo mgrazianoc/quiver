@@ -13,11 +13,12 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 arrow-flight = { workspace = true }
 arrow-schema = { workspace = true }
+parquet = { workspace = true }
 tonic = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
-base64 = "0.22"
+base64 = { workspace = true }
 prost = "0.14"
 bytes = "1.11.1"
 

@@ -20,5 +20,6 @@ dirs = { workspace = true }
 fuzzy-matcher = "0.3"
 unicode-width = "0.2"
 anyhow = { workspace = true }
+base64 = { workspace = true }
 tokio = { workspace = true }
 arrow = { workspace = true }

@@ -6,6 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use quiver_core::bridge::{CoreHandle, CoreRequest, CoreResponse};
 use quiver_core::catalog::{FlatNode, TreeNode};
 use quiver_core::connection::{AuthMethod, ConnectionManager, ConnectionProfile};
+use quiver_core::export::{self, ExportFormat};
 
 use crate::event::AppEvent;
 use crate::keybindings::KeyMode;
@@ -558,6 +559,18 @@ impl App {
                 return false;
             }
 
+            // Export results: Ctrl+S
+            KeyCode::Char('s') if ctrl && !shift => {
+                self.export_results(ExportFormat::Csv);
+                return false;
+            }
+
+            // Copy results to clipboard: Ctrl+Shift+S
+            KeyCode::Char('s') if ctrl && shift => {
+                self.copy_results_to_clipboard();
+                return false;
+            }
+
             // Command palette
             KeyCode::Char('p') if ctrl => {
                 self.command_palette_open = true;
@@ -768,6 +781,69 @@ impl App {
         self.query_running = true;
         self.tabs[self.active_tab].state = TabState::Running;
         self.core.send(CoreRequest::ExecuteQuery(sql));
+    }
+
+    fn export_results(&mut self, format: ExportFormat) {
+        let schema = match &self.result_schema {
+            Some(s) => s.clone(),
+            None => {
+                self.notify("No results to export");
+                return;
+            }
+        };
+        if self.result_batches.is_empty() {
+            self.notify("No results to export");
+            return;
+        }
+
+        let filename = format!("quiver_export.{}", format.extension());
+        let path = std::env::current_dir().unwrap_or_default().join(&filename);
+
+        match export::export_to_file(&self.result_batches, &schema, &path, format) {
+            Ok(rows) => {
+                self.notify(format!(
+                    "Exported {} rows to {} ({})",
+                    rows,
+                    filename,
+                    format.label()
+                ));
+            }
+            Err(e) => {
+                self.error_modal = Some(ErrorModal {
+                    operation: format!("export_{}", format.extension()),
+                    message: e.to_string(),
+                    elapsed: None,
+                });
+            }
+        }
+    }
+
+    fn copy_results_to_clipboard(&mut self) {
+        if self.result_batches.is_empty() {
+            self.notify("No results to copy");
+            return;
+        }
+
+        match export::export_to_csv_string(&self.result_batches) {
+            Ok(csv) => {
+                // Use OSC 52 escape sequence (works in most modern terminals)
+                let encoded = base64_encode(&csv);
+                let osc52 = format!("\x1b]52;c;{}\x07", encoded);
+                // Write directly to stdout
+                if std::io::Write::write_all(&mut std::io::stdout(), osc52.as_bytes()).is_ok() {
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                    self.notify(format!(
+                        "Copied {} rows to clipboard (CSV)",
+                        self.result_total_rows
+                    ));
+                } else {
+                    self.notify("Failed to write to clipboard");
+                }
+            }
+            Err(e) => {
+                self.notify(format!("Clipboard error: {}", e));
+            }
+        }
     }
 
     fn submit_connection(&mut self) {
@@ -1179,6 +1255,10 @@ impl App {
                     self.notify("Refreshing schema...".to_string());
                 }
             }
+            CommandAction::ExportCsv => self.export_results(ExportFormat::Csv),
+            CommandAction::ExportJson => self.export_results(ExportFormat::Json),
+            CommandAction::ExportParquet => self.export_results(ExportFormat::Parquet),
+            CommandAction::CopyToClipboard => self.copy_results_to_clipboard(),
         }
         false
     }
@@ -1487,6 +1567,13 @@ impl App {
     }
 }
 
+// ── Helpers ───────────────────────────────────────────────────
+
+fn base64_encode(input: &str) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(input.as_bytes())
+}
+
 // ── Command actions ───────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1507,6 +1594,10 @@ pub enum CommandAction {
     ExecuteQuery,
     CancelQuery,
     RefreshSchema,
+    ExportCsv,
+    ExportJson,
+    ExportParquet,
+    CopyToClipboard,
 }
 
 // ── Tests ─────────────────────────────────────────────────────

@@ -22,9 +22,9 @@ type-aware rendering — real type badges from the schema, boolean
 ✓/✗ glyphs, NULL styling, and on-the-fly cell formatting from
 Arrow arrays (only the visible viewport rows are formatted per
 frame). Errors surface in a dismissible modal overlay with
-operation context, message, and elapsed time. Query execution
-duration is tracked for both successes and failures and displayed
-in the status bar. The project is a Cargo workspace with
+operation context, message, and elapsed time. Query results can
+be exported to CSV, JSON, or Parquet files, or copied to the
+clipboard via OSC 52. The project is a Cargo workspace with
 `quiver-core` (connection/data layer) and `quiver-tui` (terminal UI).
 You can connect to any Flight SQL server, execute queries,
 browse the catalog schema tree, cancel running queries,
@@ -78,6 +78,8 @@ quiver -c 'SELECT 1' --conn dev # Non-interactive mode (future)
 | `Ctrl+O` | Open connection dialog |
 | `Ctrl+D` | Disconnect |
 | `Ctrl+R` | Refresh schema tree |
+| `Ctrl+S` | Export results as CSV |
+| `Ctrl+Shift+S` | Copy results to clipboard |
 
 ### Connection Dialog
 
