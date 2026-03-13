@@ -76,6 +76,58 @@ pub struct ErrorModal {
     pub elapsed: Option<Duration>,
 }
 
+// ── Export modal ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportOption {
+    Csv,
+    Json,
+    Parquet,
+    Clipboard,
+}
+
+impl ExportOption {
+    pub const ALL: [ExportOption; 4] = [
+        ExportOption::Csv,
+        ExportOption::Json,
+        ExportOption::Parquet,
+        ExportOption::Clipboard,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ExportOption::Csv => "Export as CSV",
+            ExportOption::Json => "Export as JSON",
+            ExportOption::Parquet => "Export as Parquet",
+            ExportOption::Clipboard => "Copy to Clipboard",
+        }
+    }
+
+    pub fn shortcut(&self) -> &'static str {
+        match self {
+            ExportOption::Csv => "csv",
+            ExportOption::Json => "json",
+            ExportOption::Parquet => "parquet",
+            ExportOption::Clipboard => "clipboard",
+        }
+    }
+}
+
+// ── Context menu ──────────────────────────────────────────────
+
+pub struct ContextMenu {
+    pub x: u16,
+    pub y: u16,
+    pub items: Vec<ContextMenuItem>,
+    pub selected: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextMenuItem {
+    pub label: String,
+    pub action: CommandAction,
+}
+
 // ── Context panel modes ───────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -306,6 +358,13 @@ pub struct App {
     // Error modal
     pub error_modal: Option<ErrorModal>,
 
+    // Export modal
+    pub export_modal_open: bool,
+    pub export_modal_selected: usize,
+
+    // Context menu (right-click)
+    pub context_menu: Option<ContextMenu>,
+
     // Last query elapsed (shown in status bar for both success and failure)
     pub last_query_elapsed: Option<Duration>,
 
@@ -382,6 +441,9 @@ impl App {
             result_col_offset: 0,
             help_open: false,
             error_modal: None,
+            export_modal_open: false,
+            export_modal_selected: 0,
+            context_menu: None,
             last_query_elapsed: None,
             notification: None,
             terminal_width: 0,
@@ -468,6 +530,65 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
+        // ── Context menu (captures keys when open) ───────────
+        if self.context_menu.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.context_menu = None;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if let Some(ref mut menu) = self.context_menu {
+                        menu.selected = menu.selected.saturating_sub(1);
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if let Some(ref mut menu) = self.context_menu {
+                        if menu.selected + 1 < menu.items.len() {
+                            menu.selected += 1;
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(menu) = self.context_menu.take() {
+                        if let Some(item) = menu.items.get(menu.selected) {
+                            return self.execute_command(item.action);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return false;
+        }
+
+        // ── Export modal (captures keys when open) ────────────
+        if self.export_modal_open {
+            match key.code {
+                KeyCode::Esc => {
+                    self.export_modal_open = false;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.export_modal_selected = self.export_modal_selected.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if self.export_modal_selected + 1 < ExportOption::ALL.len() {
+                        self.export_modal_selected += 1;
+                    }
+                }
+                KeyCode::Enter => {
+                    let option = ExportOption::ALL[self.export_modal_selected];
+                    self.export_modal_open = false;
+                    match option {
+                        ExportOption::Csv => self.export_results(ExportFormat::Csv),
+                        ExportOption::Json => self.export_results(ExportFormat::Json),
+                        ExportOption::Parquet => self.export_results(ExportFormat::Parquet),
+                        ExportOption::Clipboard => self.copy_results_to_clipboard(),
+                    }
+                }
+                _ => {}
+            }
+            return false;
+        }
+
         // ── Error modal (captures Esc when open) ─────────────
         if self.error_modal.is_some() {
             if key.code == KeyCode::Esc {
@@ -559,15 +680,10 @@ impl App {
                 return false;
             }
 
-            // Export results: Ctrl+S
-            KeyCode::Char('s') if ctrl && !shift => {
-                self.export_results(ExportFormat::Csv);
-                return false;
-            }
-
-            // Copy results to clipboard: Ctrl+Shift+S
-            KeyCode::Char('s') if ctrl && shift => {
-                self.copy_results_to_clipboard();
+            // Export modal: Ctrl+S
+            KeyCode::Char('s') if ctrl => {
+                self.export_modal_open = true;
+                self.export_modal_selected = 0;
                 return false;
             }
 
@@ -1259,6 +1375,10 @@ impl App {
             CommandAction::ExportJson => self.export_results(ExportFormat::Json),
             CommandAction::ExportParquet => self.export_results(ExportFormat::Parquet),
             CommandAction::CopyToClipboard => self.copy_results_to_clipboard(),
+            CommandAction::OpenExportModal => {
+                self.export_modal_open = true;
+                self.export_modal_selected = 0;
+            }
         }
         false
     }
@@ -1321,8 +1441,88 @@ impl App {
                 }
                 _ => {}
             },
+            MouseEventKind::Down(MouseButton::Right) => {
+                let col = mouse.column;
+                let row = mouse.row;
+                // Determine which pane was right-clicked
+                let mut clicked_pane = None;
+                for (pane, area) in &self.pane_areas {
+                    if col >= area.x
+                        && col < area.x + area.width
+                        && row >= area.y
+                        && row < area.y + area.height
+                    {
+                        clicked_pane = Some(*pane);
+                        break;
+                    }
+                }
+                if let Some(pane) = clicked_pane {
+                    self.focused_pane = pane;
+                    self.context_menu = Some(ContextMenu {
+                        x: col,
+                        y: row,
+                        items: Self::context_menu_items(pane, self.result_total_rows > 0),
+                        selected: 0,
+                    });
+                }
+            }
             _ => {}
         }
+    }
+
+    fn context_menu_items(pane: Pane, has_results: bool) -> Vec<ContextMenuItem> {
+        let mut items = vec![
+            ContextMenuItem {
+                label: "Execute Query   Ctrl+E".into(),
+                action: CommandAction::ExecuteQuery,
+            },
+            ContextMenuItem {
+                label: "Cancel Query    Ctrl+Shift+C".into(),
+                action: CommandAction::CancelQuery,
+            },
+        ];
+
+        if has_results {
+            items.push(ContextMenuItem {
+                label: "Export Results  Ctrl+S".into(),
+                action: CommandAction::OpenExportModal,
+            });
+            items.push(ContextMenuItem {
+                label: "Copy to Clipboard".into(),
+                action: CommandAction::CopyToClipboard,
+            });
+        }
+
+        match pane {
+            Pane::Editor => {
+                items.push(ContextMenuItem {
+                    label: "New Tab         Ctrl+T".into(),
+                    action: CommandAction::NewTab,
+                });
+                items.push(ContextMenuItem {
+                    label: "Close Tab       Ctrl+W".into(),
+                    action: CommandAction::CloseTab,
+                });
+            }
+            Pane::SchemaBrowser => {
+                items.push(ContextMenuItem {
+                    label: "Refresh Schema  Ctrl+R".into(),
+                    action: CommandAction::RefreshSchema,
+                });
+            }
+            _ => {}
+        }
+
+        items.push(ContextMenuItem {
+            label: "Toggle Zoom     Ctrl+Z".into(),
+            action: CommandAction::ToggleZoom,
+        });
+        items.push(ContextMenuItem {
+            label: "Command Palette Ctrl+P".into(),
+            action: CommandAction::ShowHelp,
+        });
+
+        items
     }
 
     // ── Context panel (Connection Manager mode) ──────────────
@@ -1598,6 +1798,7 @@ pub enum CommandAction {
     ExportJson,
     ExportParquet,
     CopyToClipboard,
+    OpenExportModal,
 }
 
 // ── Tests ─────────────────────────────────────────────────────

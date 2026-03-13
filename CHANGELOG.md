@@ -91,15 +91,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (e.g. `123.4ms` or `1.23s`) and inside the error modal on failure.
   The bridge sends `elapsed: Option<Duration>` on `CoreResponse::Error`
 - **Export results** — query results can be exported to CSV, JSON,
-  or Apache Parquet files from the command palette or via `Ctrl+S`
-  (CSV). Export uses Arrow's native writers — CSV via `arrow::csv`,
+  or Apache Parquet files from the command palette or via `Ctrl+S`.
+  Export uses Arrow's native writers — CSV via `arrow::csv`,
   JSON via `arrow::json`, Parquet via the `parquet` crate with
   Snappy compression. Export module in `quiver-core::export` with
   6 unit tests
-- **Copy to clipboard** — `Ctrl+Shift+S` copies results as CSV to
-  the system clipboard using the OSC 52 terminal escape sequence
-  (supported by most modern terminals including iTerm2, Kitty,
-  Alacritty, WezTerm, Windows Terminal)
+- **Export modal** — `Ctrl+S` opens a modal overlay listing all
+  export formats (CSV, JSON, Parquet, Copy to Clipboard); navigate
+  with `↑/↓` and confirm with `Enter`. The "Ctrl+S Export" hint
+  appears on the Results pane border, mirroring the Editor's
+  "Ctrl+E Run" hint
+- **Copy to clipboard** — copies results as CSV to the system
+  clipboard using the OSC 52 terminal escape sequence (supported
+  by most modern terminals including iTerm2, Kitty, Alacritty,
+  WezTerm, Windows Terminal). Accessible from the export modal
+  or command palette
+- **Right-click context menu** — right-clicking any pane opens a
+  floating context menu with pane-aware actions (Execute Query,
+  Cancel Query, Export Results, Copy to Clipboard, New/Close Tab,
+  Refresh Schema, Toggle Zoom, Command Palette); navigate with
+  `↑/↓/j/k` and confirm with `Enter`
 - **Help popup** — press `F1` or `?` for context-aware keybinding reference overlay
 - **Example** — `test_connect` example in quiver-core for quick
   connection validation (`cargo run --example test_connect -p quiver-core`)

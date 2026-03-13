@@ -78,8 +78,8 @@ quiver -c 'SELECT 1' --conn dev # Non-interactive mode (future)
 | `Ctrl+O` | Open connection dialog |
 | `Ctrl+D` | Disconnect |
 | `Ctrl+R` | Refresh schema tree |
-| `Ctrl+S` | Export results as CSV |
-| `Ctrl+Shift+S` | Copy results to clipboard |
+| `Ctrl+S` | Open export modal (CSV/JSON/Parquet/Clipboard) |
+| Right-click | Context menu with pane-aware actions |
 
 ### Connection Dialog
 

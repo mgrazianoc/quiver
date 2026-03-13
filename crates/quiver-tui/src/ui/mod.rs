@@ -5,9 +5,9 @@ pub mod statusbar;
 pub mod tabs;
 
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 
-use crate::app::{App, ConnectAuthKind, ConnectField, LayoutPreset, Pane};
+use crate::app::{App, ConnectAuthKind, ConnectField, ExportOption, LayoutPreset, Pane};
 
 /// Top-level render function. Computes layout, renders panes, overlays.
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -86,6 +86,20 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         let modal_area = centered_rect(modal_width, modal_height, area);
         frame.render_widget(Clear, modal_area);
         render_error_modal(frame, app, modal, modal_area);
+    }
+
+    // ── Export modal overlay ──────────────────────────────────
+    if app.export_modal_open {
+        let modal_width = 34u16.min(area.width.saturating_sub(4));
+        let modal_height = 8u16.min(area.height.saturating_sub(4));
+        let modal_area = centered_rect(modal_width, modal_height, area);
+        frame.render_widget(Clear, modal_area);
+        render_export_modal(frame, app, modal_area);
+    }
+
+    // ── Context menu overlay ──────────────────────────────────
+    if let Some(ref menu) = app.context_menu {
+        render_context_menu(frame, app, menu, area);
     }
 }
 
@@ -217,6 +231,17 @@ fn render_pane(frame: &mut Frame, app: &mut App, pane: Pane, area: Rect, zoomed:
         block = block.title_top(
             Line::from(Span::styled(
                 " Ctrl+E Run ",
+                Style::default().fg(Color::DarkGray),
+            ))
+            .alignment(Alignment::Right),
+        );
+    }
+
+    // Show export hint on the Results pane
+    if pane == Pane::Results {
+        block = block.title_top(
+            Line::from(Span::styled(
+                " Ctrl+S Export ",
                 Style::default().fg(Color::DarkGray),
             ))
             .alignment(Alignment::Right),
@@ -490,4 +515,83 @@ fn render_error_modal(frame: &mut Frame, app: &App, modal: &crate::app::ErrorMod
         .wrap(Wrap { trim: false })
         .style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
     frame.render_widget(paragraph, inner);
+}
+
+// ── Export modal ──────────────────────────────────────────────
+
+fn render_export_modal(frame: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title(" Export Results ")
+        .title_bottom(" ↑↓ Select │ Enter Confirm │ Esc Cancel ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(app.theme.accent))
+        .style(Style::default().bg(app.theme.bg));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let items: Vec<ListItem> = ExportOption::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, opt)| {
+            let style = if i == app.export_modal_selected {
+                Style::default()
+                    .fg(app.theme.bg)
+                    .bg(app.theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.fg)
+            };
+            ListItem::new(format!("  {}  ", opt.label())).style(style)
+        })
+        .collect();
+
+    let list = List::new(items);
+    frame.render_widget(list, inner);
+}
+
+// ── Context menu ──────────────────────────────────────────────
+
+fn render_context_menu(frame: &mut Frame, app: &App, menu: &crate::app::ContextMenu, area: Rect) {
+    let width = menu
+        .items
+        .iter()
+        .map(|item| item.label.len() as u16)
+        .max()
+        .unwrap_or(10)
+        + 4; // padding
+    let height = menu.items.len() as u16 + 2; // borders
+
+    // Clamp to terminal bounds
+    let x = menu.x.min(area.width.saturating_sub(width));
+    let y = menu.y.min(area.height.saturating_sub(height));
+    let menu_area = Rect::new(x, y, width.min(area.width), height.min(area.height));
+
+    frame.render_widget(Clear, menu_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(app.theme.accent))
+        .style(Style::default().bg(app.theme.bg));
+    let inner = block.inner(menu_area);
+    frame.render_widget(block, menu_area);
+
+    let items: Vec<ListItem> = menu
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let style = if i == menu.selected {
+                Style::default()
+                    .fg(app.theme.bg)
+                    .bg(app.theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.fg)
+            };
+            ListItem::new(format!(" {} ", item.label)).style(style)
+        })
+        .collect();
+
+    let list = List::new(items);
+    frame.render_widget(list, inner);
 }

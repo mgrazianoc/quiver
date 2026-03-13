@@ -114,9 +114,15 @@ impl CommandEntry {
                 CommandAction::RefreshSchema,
             ),
             Self::new(
-                "Export Results as CSV",
+                "Export Results...",
                 "Export",
                 "Ctrl+S",
+                CommandAction::OpenExportModal,
+            ),
+            Self::new(
+                "Export Results as CSV",
+                "Export",
+                "",
                 CommandAction::ExportCsv,
             ),
             Self::new(
@@ -134,7 +140,7 @@ impl CommandEntry {
             Self::new(
                 "Copy Results to Clipboard",
                 "Export",
-                "Ctrl+Shift+S",
+                "",
                 CommandAction::CopyToClipboard,
             ),
         ]
