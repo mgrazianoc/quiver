@@ -5,6 +5,7 @@
 //! polls for [`CoreResponse`] messages each tick via `try_recv`.
 
 use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use arrow::array::Array;
@@ -51,7 +52,11 @@ pub enum CoreResponse {
     /// Schema tree loaded.
     SchemaLoaded(Vec<TreeNode>),
     /// An operation failed.
-    Error { operation: String, message: String },
+    Error {
+        operation: String,
+        message: String,
+        elapsed: Option<Duration>,
+    },
     /// Test connection result.
     TestResult { success: bool, message: String },
 }
@@ -136,6 +141,7 @@ async fn core_loop(
                     let _ = tx.send(CoreResponse::Error {
                         operation: "connect".into(),
                         message: last_err,
+                        elapsed: None,
                     });
                 }
             }
@@ -150,6 +156,7 @@ async fn core_loop(
             CoreRequest::ExecuteQuery(sql) => {
                 let token = CancellationToken::new();
                 cancel_token = Some(token.clone());
+                let started = Instant::now();
 
                 if let Some(ref mut c) = client {
                     match c.execute_query_cancellable(&sql, token).await {
@@ -160,6 +167,7 @@ async fn core_loop(
                             let _ = tx.send(CoreResponse::Error {
                                 operation: "execute_query".into(),
                                 message: e.to_string(),
+                                elapsed: Some(started.elapsed()),
                             });
                         }
                     }
@@ -167,6 +175,7 @@ async fn core_loop(
                     let _ = tx.send(CoreResponse::Error {
                         operation: "execute_query".into(),
                         message: "not connected".into(),
+                        elapsed: Some(started.elapsed()),
                     });
                 }
                 let _ = cancel_token.take();
@@ -188,6 +197,7 @@ async fn core_loop(
                             let _ = tx.send(CoreResponse::Error {
                                 operation: "refresh_schema".into(),
                                 message: e.to_string(),
+                                elapsed: None,
                             });
                         }
                     }
@@ -195,6 +205,7 @@ async fn core_loop(
                     let _ = tx.send(CoreResponse::Error {
                         operation: "refresh_schema".into(),
                         message: "not connected".into(),
+                        elapsed: None,
                     });
                 }
             }

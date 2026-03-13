@@ -21,8 +21,11 @@ Results are stored as native Arrow `RecordBatch` data with
 type-aware rendering — real type badges from the schema, boolean
 ✓/✗ glyphs, NULL styling, and on-the-fly cell formatting from
 Arrow arrays (only the visible viewport rows are formatted per
-frame). The project is a Cargo workspace with `quiver-core`
-(connection/data layer) and `quiver-tui` (terminal UI).
+frame). Errors surface in a dismissible modal overlay with
+operation context, message, and elapsed time. Query execution
+duration is tracked for both successes and failures and displayed
+in the status bar. The project is a Cargo workspace with
+`quiver-core` (connection/data layer) and `quiver-tui` (terminal UI).
 You can connect to any Flight SQL server, execute queries,
 browse the catalog schema tree, cancel running queries,
 manage saved connection profiles, and test connections

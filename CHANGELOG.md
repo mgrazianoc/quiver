@@ -82,6 +82,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Badge colors follow type families: integers=cyan, floats=green,
   strings=yellow, temporal=magenta, booleans=blue, binary=red,
   nested=orange
+- **Error modal** — query and connection errors now open a modal
+  overlay showing operation name, error message (word-wrapped),
+  and elapsed time; press Esc to dismiss. Replaces the transient
+  3-second notification for errors
+- **Query elapsed time** — execution duration is tracked for both
+  successful and failed queries; displayed in the status bar
+  (e.g. `123.4ms` or `1.23s`) and inside the error modal on failure.
+  The bridge sends `elapsed: Option<Duration>` on `CoreResponse::Error`
 - **Help popup** — press `F1` or `?` for context-aware keybinding reference overlay
 - **Example** — `test_connect` example in quiver-core for quick
   connection validation (`cargo run --example test_connect -p quiver-core`)

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use arrow::array::RecordBatch;
 use arrow::datatypes::SchemaRef;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -63,6 +65,14 @@ impl LayoutPreset {
             LayoutPreset::ResultsFocus => LayoutPreset::Default,
         }
     }
+}
+
+// ── Error modal ───────────────────────────────────────────────
+
+pub struct ErrorModal {
+    pub operation: String,
+    pub message: String,
+    pub elapsed: Option<Duration>,
 }
 
 // ── Context panel modes ───────────────────────────────────────
@@ -292,6 +302,12 @@ pub struct App {
     // Help popup
     pub help_open: bool,
 
+    // Error modal
+    pub error_modal: Option<ErrorModal>,
+
+    // Last query elapsed (shown in status bar for both success and failure)
+    pub last_query_elapsed: Option<Duration>,
+
     // Notification
     pub notification: Option<(String, std::time::Instant)>,
 
@@ -364,6 +380,8 @@ impl App {
             result_scroll_offset: 0,
             result_col_offset: 0,
             help_open: false,
+            error_modal: None,
+            last_query_elapsed: None,
             notification: None,
             terminal_width: 0,
             terminal_height: 0,
@@ -449,6 +467,14 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
+        // ── Error modal (captures Esc when open) ─────────────
+        if self.error_modal.is_some() {
+            if key.code == KeyCode::Esc {
+                self.error_modal = None;
+            }
+            return false;
+        }
+
         // ── Help popup (captures Esc / ? / F1 when open) ──────
         if self.help_open {
             match key.code {
@@ -670,6 +696,7 @@ impl App {
                 CoreResponse::QueryCompleted(result) => {
                     self.query_running = false;
                     self.tabs[self.active_tab].state = TabState::HasResults;
+                    self.last_query_elapsed = Some(result.elapsed);
 
                     // Store RecordBatches directly — no string conversion
                     self.result_schema = Some(result.schema);
@@ -690,11 +717,23 @@ impl App {
                     self.schema_tree = tree;
                     self.schema_selected = 0;
                 }
-                CoreResponse::Error { operation, message } => {
+                CoreResponse::Error {
+                    operation,
+                    message,
+                    elapsed,
+                } => {
                     self.query_running = false;
                     if self.tabs.get(self.active_tab).is_some() {
                         self.tabs[self.active_tab].state = TabState::Error;
                     }
+                    if let Some(el) = elapsed {
+                        self.last_query_elapsed = Some(el);
+                    }
+                    self.error_modal = Some(ErrorModal {
+                        operation: operation.clone(),
+                        message: message.clone(),
+                        elapsed,
+                    });
                     self.notify(format!("{}: {}", operation, message));
                 }
                 CoreResponse::TestResult { success, message } => {

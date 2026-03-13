@@ -5,7 +5,7 @@ pub mod statusbar;
 pub mod tabs;
 
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Clear};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 use crate::app::{App, ConnectAuthKind, ConnectField, LayoutPreset, Pane};
 
@@ -77,6 +77,15 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         let dialog_area = centered_rect(dialog_width, dialog_height, area);
         frame.render_widget(Clear, dialog_area);
         render_connect_dialog(frame, app, dialog_area);
+    }
+
+    // ── Error modal overlay ───────────────────────────────────
+    if let Some(ref modal) = app.error_modal {
+        let modal_width = 60u16.min(area.width.saturating_sub(4));
+        let modal_height = 14u16.min(area.height.saturating_sub(4));
+        let modal_area = centered_rect(modal_width, modal_height, area);
+        frame.render_widget(Clear, modal_area);
+        render_error_modal(frame, app, modal, modal_area);
     }
 }
 
@@ -426,5 +435,59 @@ fn render_connect_dialog(frame: &mut Frame, app: &App, area: Rect) {
     ));
 
     let paragraph = Paragraph::new(lines).style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
+    frame.render_widget(paragraph, inner);
+}
+
+// ── Error modal ───────────────────────────────────────────────
+
+fn render_error_modal(frame: &mut Frame, app: &App, modal: &crate::app::ErrorModal, area: Rect) {
+    let block = Block::default()
+        .title(" Error ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red))
+        .style(Style::default().bg(app.theme.bg));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut lines = Vec::new();
+
+    // Operation
+    lines.push(Line::from(vec![
+        Span::styled(" Operation: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(&modal.operation, Style::default().fg(app.theme.fg)),
+    ]));
+    lines.push(Line::from(""));
+
+    // Elapsed
+    if let Some(elapsed) = modal.elapsed {
+        let ms = elapsed.as_secs_f64() * 1000.0;
+        lines.push(Line::from(vec![
+            Span::styled(" Elapsed:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{ms:.1}ms"), Style::default().fg(app.theme.fg)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    // Error message
+    lines.push(Line::styled(
+        " Message:",
+        Style::default().fg(Color::DarkGray),
+    ));
+    lines.push(Line::from(""));
+    lines.push(Line::styled(
+        format!(" {}", &modal.message),
+        Style::default().fg(Color::Red),
+    ));
+
+    // Footer
+    lines.push(Line::from(""));
+    lines.push(Line::styled(
+        " Esc to close",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    let paragraph = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
     frame.render_widget(paragraph, inner);
 }

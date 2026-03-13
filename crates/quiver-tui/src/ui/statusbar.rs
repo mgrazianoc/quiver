@@ -46,7 +46,7 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ),
     ];
 
-    // ── Right side: row count + theme + notification ──────────
+    // ── Right side: row count + elapsed + theme + notification ──
     let row_info = if app.result_total_rows > 0 {
         format!(
             " {}/{} rows ",
@@ -55,6 +55,17 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         )
     } else {
         " 0 rows ".to_string()
+    };
+
+    let elapsed_info = if let Some(elapsed) = app.last_query_elapsed {
+        let ms = elapsed.as_secs_f64() * 1000.0;
+        if ms >= 1000.0 {
+            format!(" {:.2}s ", ms / 1000.0)
+        } else {
+            format!(" {:.1}ms ", ms)
+        }
+    } else {
+        String::new()
     };
 
     let theme_label = format!(" {} ", app.theme_kind.label());
@@ -69,6 +80,14 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(notification, Style::default().fg(app.theme.accent).bg(bg)),
         Span::styled("│ ", Style::default().fg(Color::DarkGray).bg(bg)),
         Span::styled(row_info, Style::default().fg(fg).bg(bg)),
+        Span::styled("│ ", Style::default().fg(Color::DarkGray).bg(bg)),
+        Span::styled(
+            elapsed_info,
+            Style::default()
+                .fg(app.theme.accent)
+                .bg(bg)
+                .add_modifier(Modifier::DIM),
+        ),
         Span::styled("│ ", Style::default().fg(Color::DarkGray).bg(bg)),
         Span::styled(
             theme_label,
