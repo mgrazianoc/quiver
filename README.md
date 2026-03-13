@@ -17,7 +17,11 @@ to the rendering layer.
 **Current state:** v0.2-dev — the full UI shell is implemented
 (editor, result viewer, command palette, theming, mouse support)
 and wired to a live Flight SQL backend via an async bridge.
-The project is a Cargo workspace with `quiver-core`
+Results are stored as native Arrow `RecordBatch` data with
+type-aware rendering — real type badges from the schema, boolean
+✓/✗ glyphs, NULL styling, and on-the-fly cell formatting from
+Arrow arrays (only the visible viewport rows are formatted per
+frame). The project is a Cargo workspace with `quiver-core`
 (connection/data layer) and `quiver-tui` (terminal UI).
 You can connect to any Flight SQL server, execute queries,
 browse the catalog schema tree, cancel running queries,

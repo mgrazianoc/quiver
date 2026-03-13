@@ -206,8 +206,11 @@ fn render_pane(frame: &mut Frame, app: &mut App, pane: Pane, area: Rect, zoomed:
     // Show run hint on the Editor pane
     if pane == Pane::Editor {
         block = block.title_top(
-            Line::from(Span::styled(" Ctrl+E Run ", Style::default().fg(Color::DarkGray)))
-                .alignment(Alignment::Right),
+            Line::from(Span::styled(
+                " Ctrl+E Run ",
+                Style::default().fg(Color::DarkGray),
+            ))
+            .alignment(Alignment::Right),
         );
     }
 

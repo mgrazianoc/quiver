@@ -24,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and TestConnection requests
 - **Live query execution** — press `Ctrl+E` to run the
   editor contents against the connected Flight SQL server; results
-  rendered as rows in the results pane
+  stored as native Arrow `RecordBatch` data and rendered with
+  type-aware formatting in the results pane
 - **Query cancellation** — `CancellationToken` integration via
   `tokio::select!`; press `Ctrl+Shift+C` to cancel a running query
 - **Connection dialog** — `Ctrl+O` opens an inline connect popup
@@ -66,6 +67,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`~/.config/quiver/connections.toml`)
 - **Catalog types** — `TreeNode`, `TreeNodeKind`, `FlatNode` moved to
   `quiver-core::catalog` for reuse by the data layer
+- **Columnar-native results** — query results stored internally as
+  `Vec<RecordBatch>` with full `SchemaRef`; no string conversion at
+  the data layer boundary. Only visible rows (~30-60) are formatted
+  per frame via virtual scrolling with batch-aware row resolution
+- **Type-aware cell formatting** — cells formatted directly from
+  Arrow arrays: booleans render as ✓/✗, NULLs styled distinctly,
+  all other types use Arrow's native display. Formatting is
+  on-demand during draw, not pre-computed
+- **Real type badges** — column headers show compact Arrow type
+  badges derived from the actual schema (`i64`, `f64`, `utf8`,
+  `ts[μs,UTC]`, `dec(38,18)`, `list<i32>`, `§utf8` for
+  dictionary-encoded, etc.) with nullable columns marked `?`.
+  Badge colors follow type families: integers=cyan, floats=green,
+  strings=yellow, temporal=magenta, booleans=blue, binary=red,
+  nested=orange
 - **Help popup** — press `F1` or `?` for context-aware keybinding reference overlay
 - **Example** — `test_connect` example in quiver-core for quick
   connection validation (`cargo run --example test_connect -p quiver-core`)

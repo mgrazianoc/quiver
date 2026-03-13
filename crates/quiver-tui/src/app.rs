@@ -1,3 +1,5 @@
+use arrow::array::RecordBatch;
+use arrow::datatypes::SchemaRef;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use quiver_core::bridge::{CoreHandle, CoreRequest, CoreResponse};
 use quiver_core::catalog::{FlatNode, TreeNode};
@@ -279,9 +281,10 @@ pub struct App {
     pub schema_selected: usize,
     pub schema_filter: String,
 
-    // Results
-    pub result_headers: Vec<String>,
-    pub result_rows: Vec<Vec<String>>,
+    // Results (stored as Arrow RecordBatches for type-aware rendering)
+    pub result_batches: Vec<RecordBatch>,
+    pub result_schema: Option<SchemaRef>,
+    pub result_total_rows: usize,
     pub result_selected_row: usize,
     pub result_scroll_offset: usize,
     pub result_col_offset: usize,
@@ -354,8 +357,9 @@ impl App {
             schema_tree: Vec::new(),
             schema_selected: 0,
             schema_filter: String::new(),
-            result_headers: Vec::new(),
-            result_rows: Vec::new(),
+            result_batches: Vec::new(),
+            result_schema: None,
+            result_total_rows: 0,
             result_selected_row: 0,
             result_scroll_offset: 0,
             result_col_offset: 0,
@@ -667,31 +671,10 @@ impl App {
                     self.query_running = false;
                     self.tabs[self.active_tab].state = TabState::HasResults;
 
-                    // Convert RecordBatches to string rows for display
-                    self.result_headers = result
-                        .schema
-                        .fields()
-                        .iter()
-                        .map(|f| f.name().clone())
-                        .collect();
-
-                    self.result_rows = Vec::new();
-                    for batch in &result.batches {
-                        for row_idx in 0..batch.num_rows() {
-                            let row: Vec<String> = (0..batch.num_columns())
-                                .map(|col_idx| {
-                                    let col = batch.column(col_idx);
-                                    if col.is_null(row_idx) {
-                                        "NULL".to_string()
-                                    } else {
-                                        arrow::util::display::array_value_to_string(col, row_idx)
-                                            .unwrap_or_else(|_| "?".to_string())
-                                    }
-                                })
-                                .collect();
-                            self.result_rows.push(row);
-                        }
-                    }
+                    // Store RecordBatches directly — no string conversion
+                    self.result_schema = Some(result.schema);
+                    self.result_total_rows = result.total_rows;
+                    self.result_batches = result.batches;
 
                     self.result_selected_row = 0;
                     self.result_scroll_offset = 0;
@@ -903,7 +886,7 @@ impl App {
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if self.result_selected_row + 1 < self.result_rows.len() {
+                if self.result_selected_row + 1 < self.result_total_rows {
                     self.result_selected_row += 1;
                 }
             }
@@ -913,7 +896,12 @@ impl App {
                 }
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                let max_cols = self.result_headers.len().saturating_sub(3);
+                let num_cols = self
+                    .result_schema
+                    .as_ref()
+                    .map(|s| s.fields().len())
+                    .unwrap_or(0);
+                let max_cols = num_cols.saturating_sub(3);
                 if self.result_col_offset < max_cols {
                     self.result_col_offset += 1;
                 }
@@ -923,14 +911,14 @@ impl App {
                 self.result_scroll_offset = 0;
             }
             KeyCode::End | KeyCode::Char('G') => {
-                self.result_selected_row = self.result_rows.len().saturating_sub(1);
+                self.result_selected_row = self.result_total_rows.saturating_sub(1);
             }
             KeyCode::PageUp => {
                 self.result_selected_row = self.result_selected_row.saturating_sub(20);
             }
             KeyCode::PageDown => {
                 self.result_selected_row =
-                    (self.result_selected_row + 20).min(self.result_rows.len().saturating_sub(1));
+                    (self.result_selected_row + 20).min(self.result_total_rows.saturating_sub(1));
             }
             _ => {}
         }
@@ -1196,7 +1184,7 @@ impl App {
             },
             MouseEventKind::ScrollDown => match self.focused_pane {
                 Pane::Results => {
-                    if self.result_selected_row + 1 < self.result_rows.len() {
+                    if self.result_selected_row + 1 < self.result_total_rows {
                         self.result_selected_row += 1;
                     }
                 }
@@ -1366,15 +1354,11 @@ impl App {
                 self.test_connection();
             }
             // Ctrl+T to test connection from anywhere in the dialog
-            KeyCode::Char('t')
-                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.test_connection();
             }
             // Ctrl+A to toggle advanced section
-            KeyCode::Char('a')
-                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.connect_advanced_open = !self.connect_advanced_open;
                 // If closing advanced and field was there, move to TestButton
                 if !self.connect_advanced_open
@@ -1830,14 +1814,29 @@ mod tests {
 
     #[test]
     fn results_navigation_bounds() {
+        use arrow::array::Int64Array;
+        use arrow::datatypes::{DataType, Field, Schema};
+        use std::sync::Arc;
+
         let mut app = App::new();
         app.focused_pane = Pane::Results;
 
-        // Set up test data
-        app.result_headers = vec!["a".into(), "b".into()];
-        app.result_rows = (0..10)
-            .map(|i| vec![format!("{i}"), format!("{i}")])
-            .collect();
+        // Set up test data using real RecordBatches
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("a", DataType::Int64, false),
+            Field::new("b", DataType::Int64, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from((0..10).collect::<Vec<i64>>())),
+                Arc::new(Int64Array::from((0..10).collect::<Vec<i64>>())),
+            ],
+        )
+        .unwrap();
+        app.result_batches = vec![batch];
+        app.result_schema = Some(schema);
+        app.result_total_rows = 10;
 
         assert_eq!(app.result_selected_row, 0);
 
@@ -1851,11 +1850,11 @@ mod tests {
 
         // Jump to end
         app.handle_event(AppEvent::Key(key(KeyCode::Char('G'))));
-        assert_eq!(app.result_selected_row, app.result_rows.len() - 1);
+        assert_eq!(app.result_selected_row, app.result_total_rows - 1);
 
         // Can't go past end
         app.handle_event(AppEvent::Key(key(KeyCode::Down)));
-        assert_eq!(app.result_selected_row, app.result_rows.len() - 1);
+        assert_eq!(app.result_selected_row, app.result_total_rows - 1);
 
         // Jump to start
         app.handle_event(AppEvent::Key(key(KeyCode::Char('g'))));

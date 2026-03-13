@@ -47,11 +47,11 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     ];
 
     // ── Right side: row count + theme + notification ──────────
-    let row_info = if !app.result_rows.is_empty() {
+    let row_info = if app.result_total_rows > 0 {
         format!(
             " {}/{} rows ",
             app.result_selected_row + 1,
-            app.result_rows.len()
+            app.result_total_rows
         )
     } else {
         " 0 rows ".to_string()
