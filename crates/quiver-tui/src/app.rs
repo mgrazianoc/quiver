@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use arrow::array::RecordBatch;
+use arrow::compute::{concat_batches, lexsort_to_indices, take, SortColumn, SortOptions};
 use arrow::datatypes::SchemaRef;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use quiver_core::bridge::{CoreHandle, CoreRequest, CoreResponse};
@@ -126,6 +127,27 @@ pub struct ContextMenu {
 pub struct ContextMenuItem {
     pub label: String,
     pub action: CommandAction,
+}
+
+// ── Cell detail modal ─────────────────────────────────────────
+
+pub struct CellDetail {
+    pub column_name: String,
+    pub data_type: String,
+    pub value: String,
+    pub row_index: usize,
+}
+
+// ── Query history ─────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct QueryHistoryEntry {
+    pub sql: String,
+    pub timestamp: std::time::SystemTime,
+    pub elapsed: Duration,
+    pub row_count: usize,
+    pub success: bool,
+    pub error_message: Option<String>,
 }
 
 // ── Context panel modes ───────────────────────────────────────
@@ -351,6 +373,9 @@ pub struct App {
     pub result_selected_row: usize,
     pub result_scroll_offset: usize,
     pub result_col_offset: usize,
+    pub result_sort_column: Option<usize>,
+    pub result_sort_ascending: bool,
+    result_sorted_cache: Option<Vec<RecordBatch>>,
 
     // Help popup
     pub help_open: bool,
@@ -364,6 +389,26 @@ pub struct App {
 
     // Context menu (right-click)
     pub context_menu: Option<ContextMenu>,
+
+    // Cell detail modal
+    pub cell_detail: Option<CellDetail>,
+
+    // Query history
+    pub query_history: Vec<QueryHistoryEntry>,
+    pub query_history_selected: usize,
+    pub query_history_filter: String,
+    last_executed_sql: Option<String>,
+
+    // Column statistics toggle
+    pub show_column_stats: bool,
+
+    // Row selection
+    pub result_selected_rows: std::collections::HashSet<usize>,
+    pub result_anchor_row: Option<usize>,
+
+    // Connection heartbeat
+    pub last_heartbeat: Option<std::time::Instant>,
+    pub heartbeat_ok: bool,
 
     // Last query elapsed (shown in status bar for both success and failure)
     pub last_query_elapsed: Option<Duration>,
@@ -439,11 +484,24 @@ impl App {
             result_selected_row: 0,
             result_scroll_offset: 0,
             result_col_offset: 0,
+            result_sort_column: None,
+            result_sort_ascending: true,
+            result_sorted_cache: None,
             help_open: false,
             error_modal: None,
             export_modal_open: false,
             export_modal_selected: 0,
             context_menu: None,
+            cell_detail: None,
+            query_history: Vec::new(),
+            query_history_selected: 0,
+            query_history_filter: String::new(),
+            last_executed_sql: None,
+            show_column_stats: false,
+            result_selected_rows: std::collections::HashSet::new(),
+            result_anchor_row: None,
+            last_heartbeat: None,
+            heartbeat_ok: true,
             last_query_elapsed: None,
             notification: None,
             terminal_width: 0,
@@ -593,6 +651,14 @@ impl App {
         if self.error_modal.is_some() {
             if key.code == KeyCode::Esc {
                 self.error_modal = None;
+            }
+            return false;
+        }
+
+        // ── Cell detail modal (captures Esc when open) ────────
+        if self.cell_detail.is_some() {
+            if key.code == KeyCode::Esc {
+                self.cell_detail = None;
             }
             return false;
         }
@@ -821,11 +887,25 @@ impl App {
                     self.server_info.clear();
                     self.schema_tree.clear();
                     self.schema_selected = 0;
+                    self.last_heartbeat = None;
+                    self.heartbeat_ok = true;
                 }
                 CoreResponse::QueryCompleted(result) => {
                     self.query_running = false;
                     self.tabs[self.active_tab].state = TabState::HasResults;
                     self.last_query_elapsed = Some(result.elapsed);
+
+                    // Record query history
+                    if let Some(ref sql) = self.last_executed_sql.take() {
+                        self.query_history.push(QueryHistoryEntry {
+                            sql: sql.clone(),
+                            timestamp: std::time::SystemTime::now(),
+                            elapsed: result.elapsed,
+                            row_count: result.total_rows,
+                            success: true,
+                            error_message: None,
+                        });
+                    }
 
                     // Store RecordBatches directly — no string conversion
                     self.result_schema = Some(result.schema);
@@ -835,6 +915,10 @@ impl App {
                     self.result_selected_row = 0;
                     self.result_scroll_offset = 0;
                     self.result_col_offset = 0;
+                    self.result_sort_column = None;
+                    self.result_sorted_cache = None;
+                    self.result_selected_rows.clear();
+                    self.result_anchor_row = None;
                     self.focused_pane = Pane::Results;
                     self.notify(format!(
                         "{} rows in {:.1}ms",
@@ -858,6 +942,19 @@ impl App {
                     if let Some(el) = elapsed {
                         self.last_query_elapsed = Some(el);
                     }
+                    // Record failed query in history
+                    if operation == "execute_query" {
+                        if let Some(ref sql) = self.last_executed_sql.take() {
+                            self.query_history.push(QueryHistoryEntry {
+                                sql: sql.clone(),
+                                timestamp: std::time::SystemTime::now(),
+                                elapsed: elapsed.unwrap_or_default(),
+                                row_count: 0,
+                                success: false,
+                                error_message: Some(message.clone()),
+                            });
+                        }
+                    }
                     self.error_modal = Some(ErrorModal {
                         operation: operation.clone(),
                         message: message.clone(),
@@ -869,6 +966,21 @@ impl App {
                     self.connect_testing = false;
                     self.connect_test_status = Some((success, message));
                 }
+                CoreResponse::HeartbeatResult { ok } => {
+                    self.heartbeat_ok = ok;
+                    self.last_heartbeat = Some(std::time::Instant::now());
+                }
+            }
+        }
+
+        // Send periodic heartbeat if connected (every 30s)
+        if self.connected_profile.is_some() {
+            let should_ping = match self.last_heartbeat {
+                None => true,
+                Some(t) => t.elapsed() > std::time::Duration::from_secs(30),
+            };
+            if should_ping {
+                self.core.send(CoreRequest::Heartbeat);
             }
         }
     }
@@ -896,7 +1008,113 @@ impl App {
 
         self.query_running = true;
         self.tabs[self.active_tab].state = TabState::Running;
+        self.last_executed_sql = Some(sql.clone());
         self.core.send(CoreRequest::ExecuteQuery(sql));
+    }
+
+    /// Return the sorted view of result batches (or the originals if no sort).
+    pub fn display_batches(&mut self) -> Vec<RecordBatch> {
+        if self.result_sort_column.is_none() {
+            return self.result_batches.clone();
+        }
+        if let Some(ref cached) = self.result_sorted_cache {
+            return cached.clone();
+        }
+        let sorted = self.compute_sorted_batches();
+        self.result_sorted_cache = Some(sorted.clone());
+        sorted
+    }
+
+    fn compute_sorted_batches(&self) -> Vec<RecordBatch> {
+        let col_idx = match self.result_sort_column {
+            Some(c) => c,
+            None => return self.result_batches.clone(),
+        };
+        let schema = match &self.result_schema {
+            Some(s) => s.clone(),
+            None => return self.result_batches.clone(),
+        };
+        if self.result_batches.is_empty() {
+            return Vec::new();
+        }
+        // Concatenate all batches into one for sorting
+        let combined = match concat_batches(&schema, &self.result_batches) {
+            Ok(b) => b,
+            Err(_) => return self.result_batches.clone(),
+        };
+        if col_idx >= combined.num_columns() {
+            return self.result_batches.clone();
+        }
+        let sort_col = SortColumn {
+            values: combined.column(col_idx).clone(),
+            options: Some(SortOptions {
+                descending: !self.result_sort_ascending,
+                nulls_first: !self.result_sort_ascending,
+            }),
+        };
+        let indices = match lexsort_to_indices(&[sort_col], None) {
+            Ok(idx) => idx,
+            Err(_) => return self.result_batches.clone(),
+        };
+        // Reorder each column by the sorted indices
+        let sorted_columns: Vec<_> = (0..combined.num_columns())
+            .filter_map(|i| take(combined.column(i).as_ref(), &indices, None).ok())
+            .collect();
+        if sorted_columns.len() != combined.num_columns() {
+            return self.result_batches.clone();
+        }
+        match RecordBatch::try_new(schema, sorted_columns) {
+            Ok(batch) => vec![batch],
+            Err(_) => self.result_batches.clone(),
+        }
+    }
+
+    fn open_cell_detail(&mut self) {
+        let batches = if self.result_sort_column.is_some() {
+            // Use sorted view for cell detail
+            if let Some(ref cached) = self.result_sorted_cache {
+                cached.clone()
+            } else {
+                let sorted = self.compute_sorted_batches();
+                self.result_sorted_cache = Some(sorted.clone());
+                sorted
+            }
+        } else {
+            self.result_batches.clone()
+        };
+
+        let schema = match &self.result_schema {
+            Some(s) => s,
+            None => return,
+        };
+
+        // Resolve the selected row in the (possibly sorted) batch list
+        let col_idx = self.result_col_offset;
+        if col_idx >= schema.fields().len() {
+            return;
+        }
+
+        let mut remaining = self.result_selected_row;
+        for batch in &batches {
+            if remaining < batch.num_rows() {
+                let col = batch.column(col_idx);
+                let field = &schema.fields()[col_idx];
+                let value = if col.is_null(remaining) {
+                    "NULL".to_string()
+                } else {
+                    arrow::util::display::array_value_to_string(col.as_ref(), remaining)
+                        .unwrap_or_else(|_| "?".into())
+                };
+                self.cell_detail = Some(CellDetail {
+                    column_name: field.name().clone(),
+                    data_type: format!("{}", field.data_type()),
+                    value,
+                    row_index: self.result_selected_row,
+                });
+                return;
+            }
+            remaining -= batch.num_rows();
+        }
     }
 
     fn export_results(&mut self, format: ExportFormat) {
@@ -1110,7 +1328,25 @@ impl App {
     // ── Results navigation ────────────────────────────────────
 
     fn handle_results_key(&mut self, key: KeyEvent) {
+        let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         match key.code {
+            // Shift+Up/Down: extend row selection
+            KeyCode::Up if shift => {
+                let row = self.result_selected_row;
+                self.result_selected_rows.insert(row);
+                if row > 0 {
+                    self.result_selected_row -= 1;
+                    self.result_selected_rows.insert(self.result_selected_row);
+                }
+            }
+            KeyCode::Down if shift => {
+                let row = self.result_selected_row;
+                self.result_selected_rows.insert(row);
+                if row + 1 < self.result_total_rows {
+                    self.result_selected_row += 1;
+                    self.result_selected_rows.insert(self.result_selected_row);
+                }
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.result_selected_row > 0 {
                     self.result_selected_row -= 1;
@@ -1151,6 +1387,62 @@ impl App {
                 self.result_selected_row =
                     (self.result_selected_row + 20).min(self.result_total_rows.saturating_sub(1));
             }
+            // Sort: 's' toggles sort on current column
+            KeyCode::Char('s') => {
+                let col = self.result_col_offset;
+                let num_cols = self
+                    .result_schema
+                    .as_ref()
+                    .map(|s| s.fields().len())
+                    .unwrap_or(0);
+                if col < num_cols {
+                    if self.result_sort_column == Some(col) {
+                        if self.result_sort_ascending {
+                            self.result_sort_ascending = false;
+                        } else {
+                            // Third press: clear sort
+                            self.result_sort_column = None;
+                        }
+                    } else {
+                        self.result_sort_column = Some(col);
+                        self.result_sort_ascending = true;
+                    }
+                    self.result_sorted_cache = None; // invalidate cache
+                    self.result_selected_row = 0;
+                    self.result_scroll_offset = 0;
+                }
+            }
+            // Enter: show cell detail popup
+            KeyCode::Enter => {
+                self.open_cell_detail();
+            }
+            // Space: toggle row selection
+            KeyCode::Char(' ') => {
+                let row = self.result_selected_row;
+                if self.result_selected_rows.contains(&row) {
+                    self.result_selected_rows.remove(&row);
+                } else {
+                    self.result_selected_rows.insert(row);
+                }
+                self.result_anchor_row = Some(row);
+                // Auto-advance cursor
+                if self.result_selected_row + 1 < self.result_total_rows {
+                    self.result_selected_row += 1;
+                }
+            }
+            // S (Shift+s): toggle column statistics row
+            KeyCode::Char('S') => {
+                self.show_column_stats = !self.show_column_stats;
+                let state = if self.show_column_stats { "on" } else { "off" };
+                self.notify(format!("Column stats: {}", state));
+            }
+            // Esc: clear row selection
+            KeyCode::Esc => {
+                if !self.result_selected_rows.is_empty() {
+                    self.result_selected_rows.clear();
+                    self.result_anchor_row = None;
+                }
+            }
             _ => {}
         }
     }
@@ -1160,14 +1452,26 @@ impl App {
     fn handle_schema_key(&mut self, key: KeyEvent) {
         let flat_len = self.flat_schema_nodes().len();
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.schema_selected > 0 {
-                    self.schema_selected -= 1;
+            KeyCode::Up | KeyCode::Char('k')
+                if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT =>
+            {
+                if key.code == KeyCode::Up || self.schema_filter.is_empty() {
+                    if self.schema_selected > 0 {
+                        self.schema_selected -= 1;
+                    }
+                } else {
+                    self.schema_filter.push('k');
                 }
             }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if self.schema_selected + 1 < flat_len {
-                    self.schema_selected += 1;
+            KeyCode::Down | KeyCode::Char('j')
+                if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT =>
+            {
+                if key.code == KeyCode::Down || self.schema_filter.is_empty() {
+                    if self.schema_selected + 1 < flat_len {
+                        self.schema_selected += 1;
+                    }
+                } else {
+                    self.schema_filter.push('j');
                 }
             }
             KeyCode::Enter | KeyCode::Right => {
@@ -1175,6 +1479,22 @@ impl App {
             }
             KeyCode::Left => {
                 self.toggle_schema_node(self.schema_selected, false);
+            }
+            KeyCode::Esc => {
+                if !self.schema_filter.is_empty() {
+                    self.schema_filter.clear();
+                    self.schema_selected = 0;
+                }
+            }
+            KeyCode::Backspace => {
+                if !self.schema_filter.is_empty() {
+                    self.schema_filter.pop();
+                    self.schema_selected = 0;
+                }
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.schema_filter.push(c);
+                self.schema_selected = 0;
             }
             _ => {}
         }
@@ -1185,7 +1505,14 @@ impl App {
         for tree in &self.schema_tree {
             nodes.extend(tree.flatten());
         }
+        if self.schema_filter.is_empty() {
+            return nodes;
+        }
+        let filter = self.schema_filter.to_lowercase();
         nodes
+            .into_iter()
+            .filter(|n| n.label.to_lowercase().contains(&filter))
+            .collect()
     }
 
     fn toggle_schema_node(&mut self, _flat_idx: usize, expand: bool) {
@@ -1379,6 +1706,16 @@ impl App {
                 self.export_modal_open = true;
                 self.export_modal_selected = 0;
             }
+            CommandAction::ToggleColumnStats => {
+                self.show_column_stats = !self.show_column_stats;
+                let state = if self.show_column_stats { "on" } else { "off" };
+                self.notify(format!("Column stats: {}", state));
+            }
+            CommandAction::ClearRowSelection => {
+                self.result_selected_rows.clear();
+                self.result_anchor_row = None;
+                self.notify("Row selection cleared");
+            }
         }
         false
     }
@@ -1528,9 +1865,57 @@ impl App {
     // ── Context panel (Connection Manager mode) ──────────────
 
     fn handle_context_key(&mut self, key: KeyEvent) {
-        if self.context_mode != ContextMode::ConnectionManager {
+        match self.context_mode {
+            ContextMode::ConnectionManager => self.handle_context_connmgr_key(key),
+            ContextMode::QueryHistory => self.handle_context_history_key(key),
+            _ => {}
+        }
+    }
+
+    fn handle_context_history_key(&mut self, key: KeyEvent) {
+        let count = self.query_history.len();
+        if count == 0 {
             return;
         }
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.query_history_selected + 1 < count {
+                    self.query_history_selected += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.query_history_selected = self.query_history_selected.saturating_sub(1);
+            }
+            // Enter: load the selected history entry into editor
+            KeyCode::Enter => {
+                // History is displayed in reverse order
+                let idx = count
+                    .saturating_sub(1)
+                    .saturating_sub(self.query_history_selected);
+                if let Some(entry) = self.query_history.get(idx) {
+                    let sql = entry.sql.clone();
+                    let tab = &mut self.tabs[self.active_tab];
+                    tab.content = sql.lines().map(String::from).collect();
+                    if tab.content.is_empty() {
+                        tab.content.push(String::new());
+                    }
+                    tab.cursor_row = 0;
+                    tab.cursor_col = 0;
+                    self.focused_pane = Pane::Editor;
+                    self.notify("Loaded query from history");
+                }
+            }
+            KeyCode::Char('g') => {
+                self.query_history_selected = 0;
+            }
+            KeyCode::Char('G') => {
+                self.query_history_selected = count.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_context_connmgr_key(&mut self, key: KeyEvent) {
         let count = self.conn_manager.profiles.len();
         if count == 0 {
             return;
@@ -1799,6 +2184,8 @@ pub enum CommandAction {
     ExportParquet,
     CopyToClipboard,
     OpenExportModal,
+    ToggleColumnStats,
+    ClearRowSelection,
 }
 
 // ── Tests ─────────────────────────────────────────────────────

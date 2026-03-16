@@ -1,29 +1,58 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{List, ListItem};
+use ratatui::widgets::{List, ListItem, Paragraph};
 
 use quiver_core::catalog::TreeNodeKind;
 
-use crate::app::App;
+use crate::app::{App, Pane};
 
 pub fn render_schema_browser(frame: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 || area.width == 0 {
         return;
     }
 
+    // ── Filter input bar ──────────────────────────────────────
+    let (filter_area, list_area) =
+        if !app.schema_filter.is_empty() || app.focused_pane == Pane::SchemaBrowser {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(1), Constraint::Min(1)])
+                .split(area);
+
+            let filter_text = if app.schema_filter.is_empty() {
+                "/ type to filter…".to_string()
+            } else {
+                format!("/ {}_", app.schema_filter)
+            };
+            let filter_style = if app.schema_filter.is_empty() {
+                Style::default().fg(Color::DarkGray).bg(app.theme.bg)
+            } else {
+                Style::default().fg(app.theme.accent).bg(app.theme.bg)
+            };
+            let filter_widget = Paragraph::new(filter_text).style(filter_style);
+            frame.render_widget(filter_widget, chunks[0]);
+            (Some(chunks[0]), chunks[1])
+        } else {
+            (None, area)
+        };
+
     let flat_nodes = app.flat_schema_nodes();
 
     if flat_nodes.is_empty() {
-        let empty =
-            ratatui::widgets::Paragraph::new("No schema loaded.\nConnect to a server to browse.")
-                .style(Style::default().fg(Color::DarkGray).bg(app.theme.bg))
-                .alignment(Alignment::Center);
-        frame.render_widget(empty, area);
+        let msg = if !app.schema_filter.is_empty() {
+            "No matching items."
+        } else {
+            "No schema loaded.\nConnect to a server to browse."
+        };
+        let empty = Paragraph::new(msg)
+            .style(Style::default().fg(Color::DarkGray).bg(app.theme.bg))
+            .alignment(Alignment::Center);
+        frame.render_widget(empty, list_area);
         return;
     }
 
     // Ensure selected is in view
-    let visible_start = if app.schema_selected >= area.height as usize {
-        app.schema_selected - area.height as usize + 1
+    let visible_start = if app.schema_selected >= list_area.height as usize {
+        app.schema_selected - list_area.height as usize + 1
     } else {
         0
     };
@@ -32,7 +61,7 @@ pub fn render_schema_browser(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .skip(visible_start)
-        .take(area.height as usize)
+        .take(list_area.height as usize)
         .map(|(i, node)| {
             let is_selected = i == app.schema_selected;
             let indent = "  ".repeat(node.depth);
@@ -74,5 +103,5 @@ pub fn render_schema_browser(frame: &mut Frame, app: &App, area: Rect) {
 
     let list = List::new(items).style(Style::default().bg(app.theme.bg));
 
-    frame.render_widget(list, area);
+    frame.render_widget(list, list_area);
 }

@@ -15,9 +15,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `F1:Help` and `Ctrl+P:Commands` in accent color
 - **Default context panel** — starts on Connection Manager
   instead of Server Info for quicker access to saved profiles
+- **Results table row index** — a 1-based row number column is now
+  shown on the left side of the results table for easy reference
 
 ### Added
 
+- **Schema browser filter** — type characters in the schema browser
+  to incrementally filter tree nodes; Backspace deletes, Esc clears.
+  A filter bar appears at the bottom of the pane when active
+- **Client-side sorting** — press `s` in the results viewer to sort
+  by the current column (cycles: ascending ▲ → descending ▼ → off).
+  Sort indicators appear in the column header. Sorting is performed
+  on the full RecordBatch data using Arrow's `lexsort_to_indices`
+  and `take` kernels; sorted batches are cached until invalidated
+- **Cell detail popup** — press `Enter` on a result cell to open a
+  modal overlay showing the column name, Arrow data type, row index,
+  and full cell value. Useful for inspecting long strings or nested
+  types. Press `Esc` to dismiss
+- **Connection heartbeat** — a periodic heartbeat (every 30 seconds)
+  checks server connectivity by issuing a `GetSqlInfo` call. The
+  status bar shows a green ● when healthy or a red ○ when the
+  heartbeat fails. Heartbeat state resets on disconnect
+- **Column statistics** — press `S` (Shift+S) in the results viewer
+  to toggle a footer row showing per-column statistics: row count,
+  null count, and min/max values for numeric columns. Statistics are
+  computed from the Arrow arrays using `arrow::compute::aggregate`
+- **Row selection / multi-select** — press `Space` to toggle
+  selection on the current row (auto-advances), `Shift+↑/↓` to
+  extend a contiguous selection range, and `Esc` to clear all
+  selections. Selected rows are highlighted with bold accent styling.
+  The status bar shows the selection count (e.g. "5 sel")
+- **Query history** — executed queries are recorded with timestamp,
+  elapsed time, row count, and success/failure status. The context
+  panel's Query History mode shows entries in reverse chronological
+  order with ✓/✗ icons. Press `Enter` on a history entry to reload
+  its SQL into the editor. Navigate with `j`/`k`, jump with `g`/`G`
+- **Command palette entries** — added Toggle Column Statistics and
+  Clear Row Selection to the command palette (`Ctrl+P`)
 - **Async bridge** — `CoreHandle` spawns a background tokio runtime
   connected to the TUI event loop via mpsc channels; supports
   Connect, Disconnect, ExecuteQuery, CancelQuery, RefreshSchema,

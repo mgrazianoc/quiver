@@ -143,6 +143,18 @@ impl CommandEntry {
                 "",
                 CommandAction::CopyToClipboard,
             ),
+            Self::new(
+                "Toggle Column Statistics",
+                "Results",
+                "S",
+                CommandAction::ToggleColumnStats,
+            ),
+            Self::new(
+                "Clear Row Selection",
+                "Results",
+                "Esc",
+                CommandAction::ClearRowSelection,
+            ),
         ]
     }
 }

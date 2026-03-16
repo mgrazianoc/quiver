@@ -35,6 +35,8 @@ pub enum CoreRequest {
     RefreshSchema,
     /// Test a connection without persisting it.
     TestConnection(ConnectionProfile),
+    /// Heartbeat / health check ping.
+    Heartbeat,
 }
 
 /// Responses the async runtime sends back to the TUI.
@@ -59,6 +61,8 @@ pub enum CoreResponse {
     },
     /// Test connection result.
     TestResult { success: bool, message: String },
+    /// Heartbeat response.
+    HeartbeatResult { ok: bool },
 }
 
 // ── Core handle ───────────────────────────────────────────────
@@ -225,6 +229,16 @@ async fn core_loop(
                     });
                 }
             },
+
+            CoreRequest::Heartbeat => {
+                let ok = if let Some(ref mut c) = client {
+                    // Simple ping: try to get SQL info (lightweight RPC)
+                    c.get_sql_info(vec![]).await.is_ok()
+                } else {
+                    false
+                };
+                let _ = tx.send(CoreResponse::HeartbeatResult { ok });
+            }
         }
     }
 }

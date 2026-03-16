@@ -10,7 +10,13 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let (connection_dot, dot_color, connection_label) = if app.query_running {
         ("●", Color::Yellow, "Running...".to_string())
     } else if let Some(ref profile) = app.connected_profile {
-        ("●", Color::Green, profile.name.clone())
+        let health = if app.heartbeat_ok { "●" } else { "○" };
+        let health_color = if app.heartbeat_ok {
+            Color::Green
+        } else {
+            Color::Red
+        };
+        (health, health_color, profile.name.clone())
     } else {
         (
             "●",
@@ -48,11 +54,21 @@ pub fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     // ── Right side: row count + elapsed + theme + notification ──
     let row_info = if app.result_total_rows > 0 {
-        format!(
-            " {}/{} rows ",
-            app.result_selected_row + 1,
-            app.result_total_rows
-        )
+        let sel_count = app.result_selected_rows.len();
+        if sel_count > 0 {
+            format!(
+                " {}/{} rows ({} sel) ",
+                app.result_selected_row + 1,
+                app.result_total_rows,
+                sel_count
+            )
+        } else {
+            format!(
+                " {}/{} rows ",
+                app.result_selected_row + 1,
+                app.result_total_rows
+            )
+        }
     } else {
         " 0 rows ".to_string()
     };

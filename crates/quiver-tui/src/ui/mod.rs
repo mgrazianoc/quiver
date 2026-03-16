@@ -101,6 +101,15 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     if let Some(ref menu) = app.context_menu {
         render_context_menu(frame, app, menu, area);
     }
+
+    // ── Cell detail modal overlay ─────────────────────────────
+    if let Some(ref detail) = app.cell_detail {
+        let modal_width = 60u16.min(area.width.saturating_sub(4));
+        let modal_height = 12u16.min(area.height.saturating_sub(4));
+        let modal_area = centered_rect(modal_width, modal_height, area);
+        frame.render_widget(Clear, modal_area);
+        render_cell_detail(frame, app, detail, modal_area);
+    }
 }
 
 /// Render the multi-pane layout based on the current preset.
@@ -594,4 +603,47 @@ fn render_context_menu(frame: &mut Frame, app: &App, menu: &crate::app::ContextM
 
     let list = List::new(items);
     frame.render_widget(list, inner);
+}
+
+// ── Cell detail modal ─────────────────────────────────────────
+
+fn render_cell_detail(frame: &mut Frame, app: &App, detail: &crate::app::CellDetail, area: Rect) {
+    let block = Block::default()
+        .title(" Cell Detail ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(app.theme.accent))
+        .style(Style::default().bg(app.theme.bg));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(" Column: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&detail.column_name, Style::default().fg(app.theme.fg)),
+        ]),
+        Line::from(vec![
+            Span::styled(" Type:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&detail.data_type, Style::default().fg(app.theme.accent)),
+        ]),
+        Line::from(vec![
+            Span::styled(" Row:    ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                detail.row_index.to_string(),
+                Style::default().fg(app.theme.fg),
+            ),
+        ]),
+        Line::from(""),
+        Line::styled(" Value:", Style::default().fg(Color::DarkGray)),
+        Line::styled(
+            format!(" {}", &detail.value),
+            Style::default().fg(app.theme.fg),
+        ),
+        Line::from(""),
+        Line::styled(" Esc to close", Style::default().fg(Color::DarkGray)),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
+    frame.render_widget(paragraph, inner);
 }

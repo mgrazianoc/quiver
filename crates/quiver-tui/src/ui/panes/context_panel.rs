@@ -107,19 +107,85 @@ fn render_server_info(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_query_history(frame: &mut Frame, app: &App, area: Rect) {
-    let lines = vec![
-        Line::from(vec![Span::styled("Query History", app.theme.result_header)]),
-        Line::from(""),
-        Line::styled(
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "Query History",
+        app.theme.result_header,
+    )])];
+
+    if app.query_history.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::styled(
             "No queries executed yet.",
             Style::default().fg(Color::DarkGray),
-        ),
-        Line::from(""),
-        Line::styled(
+        ));
+        lines.push(Line::from(""));
+        lines.push(Line::styled(
             "Queries will appear here as you execute them.",
             Style::default().fg(Color::DarkGray),
-        ),
-    ];
+        ));
+    } else {
+        lines.push(Line::from(""));
+
+        // Show entries in reverse chronological order
+        let entries: Vec<_> = app.query_history.iter().rev().collect();
+        let visible_height = area.height.saturating_sub(3) as usize;
+
+        for (i, entry) in entries.iter().enumerate().take(visible_height / 2) {
+            let is_selected = i == app.query_history_selected;
+
+            let icon = if entry.success { "✓" } else { "✗" };
+            let icon_color = if entry.success {
+                Color::Green
+            } else {
+                Color::Red
+            };
+
+            let ms = entry.elapsed.as_secs_f64() * 1000.0;
+            let elapsed_str = if ms >= 1000.0 {
+                format!("{:.1}s", ms / 1000.0)
+            } else {
+                format!("{:.0}ms", ms)
+            };
+
+            let row_info = if entry.success {
+                format!("{} rows", entry.row_count)
+            } else {
+                "failed".to_string()
+            };
+
+            let name_style = if is_selected {
+                Style::default()
+                    .fg(app.theme.bg)
+                    .bg(app.theme.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.fg)
+            };
+
+            let detail_style = if is_selected {
+                Style::default().fg(app.theme.bg).bg(app.theme.accent)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
+            // Truncate SQL to fit
+            let max_sql_len = area.width.saturating_sub(4) as usize;
+            let sql_display = if entry.sql.len() > max_sql_len {
+                format!("{}…", &entry.sql[..max_sql_len.saturating_sub(1)])
+            } else {
+                entry.sql.clone()
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(format!(" {} ", icon), Style::default().fg(icon_color)),
+                Span::styled(sql_display, name_style),
+            ]));
+            lines.push(Line::from(vec![
+                Span::raw("   "),
+                Span::styled(format!("{} │ {}", elapsed_str, row_info), detail_style),
+            ]));
+        }
+    }
 
     let widget = Paragraph::new(lines).style(Style::default().bg(app.theme.bg).fg(app.theme.fg));
     frame.render_widget(widget, area);

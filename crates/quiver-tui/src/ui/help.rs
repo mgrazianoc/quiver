@@ -41,6 +41,7 @@ pub fn help_lines(app: &App) -> Vec<Line<'static>> {
     lines.push(row("Alt+1-9", "Jump to tab N"));
     lines.push(row("Ctrl+L", "Cycle layout"));
     lines.push(row("Ctrl+K", "Cycle theme"));
+    lines.push(row("Ctrl+S", "Export results"));
     lines.push(row("Ctrl+J", "Cycle context panel"));
     lines.push(Line::from(""));
 
@@ -67,12 +68,21 @@ pub fn help_lines(app: &App) -> Vec<Line<'static>> {
             lines.push(row("h/l or ←/→", "Scroll columns"));
             lines.push(row("g / G", "First / last row"));
             lines.push(row("PageUp / PageDown", "Page through results"));
+            lines.push(row("Enter", "Cell detail popup"));
+            lines.push(row("s", "Sort column (asc→desc→off)"));
+            lines.push(row("S", "Toggle column statistics"));
+            lines.push(row("Space", "Toggle row selection"));
+            lines.push(row("Shift+↑/↓", "Extend row selection"));
+            lines.push(row("Esc", "Clear row selection"));
         }
         Pane::SchemaBrowser => {
             lines.push(heading("Schema Browser"));
             lines.push(row("j/k or ↑/↓", "Navigate tree"));
             lines.push(row("Enter / →", "Expand node"));
             lines.push(row("←", "Collapse node"));
+            lines.push(row("Type chars", "Filter schema items"));
+            lines.push(row("Backspace", "Delete filter char"));
+            lines.push(row("Esc", "Clear filter"));
         }
         Pane::ContextPanel => {
             lines.push(heading("Context Panel"));
@@ -81,6 +91,10 @@ pub fn help_lines(app: &App) -> Vec<Line<'static>> {
                 "(Server Info / History / Connections / Stream Monitor)",
                 dim,
             )));
+            lines.push(row("j/k or ↑/↓", "Navigate entries"));
+            lines.push(row("Enter", "Connect (profiles) / Load (history)"));
+            lines.push(row("e", "Edit profile"));
+            lines.push(row("x", "Delete profile"));
         }
     }
 

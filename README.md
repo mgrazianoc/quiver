@@ -24,8 +24,13 @@ Arrow arrays (only the visible viewport rows are formatted per
 frame). Errors surface in a dismissible modal overlay with
 operation context, message, and elapsed time. Query results can
 be exported to CSV, JSON, or Parquet files, or copied to the
-clipboard via OSC 52. The project is a Cargo workspace with
-`quiver-core` (connection/data layer) and `quiver-tui` (terminal UI).
+clipboard via OSC 52. Results can be sorted by any column,
+inspected cell-by-cell, and annotated with column statistics.
+The schema browser supports incremental text filtering.
+Connection health is monitored via a periodic heartbeat, and
+query history is recorded and browsable in the context panel.
+The project is a Cargo workspace with `quiver-core`
+(connection/data layer) and `quiver-tui` (terminal UI).
 You can connect to any Flight SQL server, execute queries,
 browse the catalog schema tree, cancel running queries,
 manage saved connection profiles, and test connections
@@ -114,6 +119,12 @@ Standard text editing: arrow keys, Home/End, Backspace, Delete, Enter, Tab (4 sp
 | `h/l` or `←/→` | Scroll columns |
 | `g` / `G` | Jump to first / last row |
 | `PageUp/Down` | Page through results |
+| `s` | Sort by current column (cycles: asc → desc → off) |
+| `S` | Toggle column statistics row |
+| `Enter` | Open cell detail popup |
+| `Space` | Toggle row selection |
+| `Shift+↑/↓` | Extend row selection range |
+| `Esc` | Clear row selection |
 
 ### Schema Browser
 
@@ -122,6 +133,17 @@ Standard text editing: arrow keys, Home/End, Backspace, Delete, Enter, Tab (4 sp
 | `j/k` or `↑/↓` | Navigate tree |
 | `Enter` / `→` | Expand node |
 | `←` | Collapse node |
+| Type characters | Filter tree nodes |
+| `Backspace` | Delete filter character |
+| `Esc` | Clear filter |
+
+### Query History (Context Panel)
+
+| Key | Action |
+| --- | --- |
+| `j/k` or `↑/↓` | Navigate history entries |
+| `Enter` | Load selected query into editor |
+| `g` / `G` | Jump to first / last entry |
 
 ## Themes
 
@@ -196,12 +218,16 @@ crates/
 
 ## Roadmap
 
-- [x] **v0.2** — Flight SQL connection, async bridge, query execution, schema refresh
-- [ ] **v0.3** — RecordBatch-native rendering, streaming results, export (Parquet/CSV/IPC)
-- [ ] **v0.4** — Query execution, streaming results, export (Parquet/CSV/IPC)
-- [ ] **v0.5** — DataFusion local analytics engine
-- [ ] **v0.6** — Vim/Emacs keybinding modes, tree-sitter highlighting
-- [ ] **v0.7** — Server compliance & conformance testing (§16)
+- [x] **v0.1** — Multi-pane TUI shell, query editor, tab system, 7 themes, mouse support
+- [x] **v0.2** — Flight SQL connection, async bridge, query execution, schema refresh,
+  RecordBatch-native rendering, export (CSV/JSON/Parquet/Clipboard), connection manager,
+  client-side sorting, column statistics, cell detail popup, row selection, schema browser
+  filter, connection heartbeat, query history, error modal
+- [ ] **v0.3** — Streaming results, client-side filtering, query timing breakdown,
+  syntax highlighting improvements
+- [ ] **v0.4** — DataFusion local analytics engine, saved queries
+- [ ] **v0.5** — Vim/Emacs keybinding modes, tree-sitter highlighting
+- [ ] **v0.6** — Server compliance & conformance testing
 - [ ] **v1.0** — Full feature spec implementation
 
 ## Contributing
